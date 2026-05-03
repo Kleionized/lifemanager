@@ -511,8 +511,8 @@ function DayCalendar({
   return (
     <div
       ref={scrollRef}
-      className="lg-card rounded-xl overflow-auto"
-      style={{ height: "calc(100vh - 15rem)", minHeight: "600px" }}
+      className="overflow-auto border-t border-black/10 dark:border-white/10 -mx-10"
+      style={{ height: "calc(100vh - 7rem)" }}
     >
       <div
         className="grid"
@@ -564,8 +564,8 @@ function WeekCalendar({
   return (
     <div
       ref={scrollRef}
-      className="lg-card rounded-xl overflow-auto"
-      style={{ height: "calc(100vh - 9rem)", minHeight: "640px" }}
+      className="overflow-auto border-t border-black/10 dark:border-white/10 -mx-10 -mt-3"
+      style={{ height: "calc(100vh - 6rem)" }}
     >
       <div
         className="grid"
@@ -889,28 +889,14 @@ function TodayView({ bundle, goals, todayDate, nowMin, openTracking, mut }) {
   const currentEvent =
     overlapping.find((o) => o.c === "lecture") || overlapping[0] || null;
 
+  const subtitle = `${DAY_FULL[todayDate.getDay()]} · Week ${week} · ${phase === "essay" ? "Essay" : "Revision"} · ${ENERGY_BY_ID[energy]?.label?.split(" ")[0] || energy}`;
+
   return (
-    <div className="space-y-6">
-      <header>
-        <h1 className="text-3xl font-semibold tracking-tight">
-          Today is {DAY_FULL[todayDate.getDay()]}, week {week} of term
-        </h1>
-        <p className="text-sm text-neutral-500 dark:text-neutral-400 mt-2">
-          {todayDate.toDateString()} ·{" "}
-          {phase === "essay" ? "Essay phase" : "Revision phase"} ·{" "}
-          {ENERGY_BY_ID[energy]?.label || energy}
-        </p>
-      </header>
-
-      <NowCard
-        events={events}
-        nowMin={nowMin}
-        energy={energy}
-        noBlocks={NO_BLOCKS_ENERGIES.has(energy)}
-      />
-
-      <div className="flex flex-wrap gap-3 items-center">
+    <div className="space-y-3">
+      <div className="flex items-center gap-3 flex-wrap text-xs text-neutral-500 dark:text-neutral-400">
+        <span>{subtitle}</span>
         <PillToggle
+          size="sm"
           options={ENERGY_LEVELS.map((e) => ({ id: e.id, label: e.label.split(" ")[0] }))}
           value={energy}
           onChange={(id) =>
@@ -924,7 +910,7 @@ function TodayView({ bundle, goals, todayDate, nowMin, openTracking, mut }) {
         <PillToggle
           size="sm"
           options={[
-            { id: "auto", label: "Auto phase" },
+            { id: "auto", label: "Auto" },
             { id: "essay", label: "Essay" },
             { id: "revision", label: "Revision" },
           ]}
@@ -939,7 +925,7 @@ function TodayView({ bundle, goals, todayDate, nowMin, openTracking, mut }) {
       </div>
 
       {NO_BLOCKS_ENERGIES.has(energy) ? (
-        <div className="lg-card rounded-xl p-10 text-center">
+        <div className="border border-black/10 dark:border-white/10 rounded-md p-12 text-center">
           <div className="inline-block px-3 py-1.5 rounded-md text-sm bg-neutral-200/60 dark:bg-neutral-800/60 text-neutral-700 dark:text-neutral-300">
             No schedule today.
           </div>
@@ -961,8 +947,6 @@ function TodayView({ bundle, goals, todayDate, nowMin, openTracking, mut }) {
           onEventClick={(ev, dateIso) => openTracking(ev, dateIso)}
         />
       )}
-
-      <CategoryLegend goals={goals} bundle={bundle} />
     </div>
   );
 }
@@ -986,25 +970,15 @@ function WeekView({ bundle, todayDate, nowMin, openTracking }) {
     [bundle.tracking]
   );
   return (
-    <div className="space-y-5">
-      <header>
-        <h1 className="text-3xl font-semibold tracking-tight">This week</h1>
-        <p className="text-sm text-neutral-500 dark:text-neutral-400 mt-2">
-          Recurring lectures plus your daily schedule template. Today's column
-          highlighted.
-        </p>
-      </header>
-      <WeekCalendar
-        monday={monday}
-        bundle={bundle}
-        trackingByDate={trackingByDate}
-        nowMin={nowMin}
-        currentEvent={currentEvent}
-        onEventClick={(ev, dateIso) => openTracking(ev, dateIso)}
-        todayIso={todayIso}
-      />
-      <CategoryLegend />
-    </div>
+    <WeekCalendar
+      monday={monday}
+      bundle={bundle}
+      trackingByDate={trackingByDate}
+      nowMin={nowMin}
+      currentEvent={currentEvent}
+      onEventClick={(ev, dateIso) => openTracking(ev, dateIso)}
+      todayIso={todayIso}
+    />
   );
 }
 

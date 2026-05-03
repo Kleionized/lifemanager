@@ -25,27 +25,28 @@ const BLOCK_VALIDATOR = v.object({
 // each block. Category id "lnat" is preserved (foreign key on existing
 // data); the visible label flips to "Startup" on the React side.
 
-// Breakfast comes directly after wake — hall closes at 9:30 — so the
-// study blocks slide later. Each high day delivers ~7.5–8 hours of
-// study (finals + essay/papers + startup) plus ~1 hr finals review and
-// gym. Low day is gentler; moderate is Sunday-style rest.
+// 30-min breakfast right after wake (hall closes 9:30). Schedules
+// shifted 30 min earlier vs. the previous template so there's no
+// awkward gap between breakfast and the first study block. Last
+// startup block extended to 2 hours (was 90 min) per the
+// "extend-the-previous-session-when-there's-a-gap" hint.
 const SEED_SCHEDULES: { energy: string; phase: string; blocks: any[] }[] = [
   {
     energy: "high",
     phase: "essay",
     blocks: [
       { s: "08:00", e: "08:30", t: "Wake & water", c: "rest", d: "30m" },
-      { s: "08:30", e: "09:30", t: "Breakfast", c: "life", d: "60m" },
-      { s: "09:30", e: "11:00", t: "Finals block", c: "finals", d: "90m" },
-      { s: "11:00", e: "12:30", t: "Essay block", c: "essays", d: "90m" },
-      { s: "12:30", e: "13:30", t: "Lunch", c: "life", d: "60m" },
-      { s: "13:30", e: "15:00", t: "Startup block", c: "lnat", d: "90m" },
-      { s: "15:00", e: "15:30", t: "Power nap", c: "rest", d: "30m" },
-      { s: "15:30", e: "16:30", t: "Finals review", c: "finals", d: "60m" },
-      { s: "16:30", e: "17:30", t: "Gym", c: "fitness", d: "60m" },
-      { s: "17:30", e: "18:30", t: "Startup block", c: "lnat", d: "60m" },
-      { s: "18:30", e: "19:30", t: "Dinner", c: "life", d: "60m" },
-      { s: "19:30", e: "21:00", t: "Startup block", c: "lnat", d: "90m" },
+      { s: "08:30", e: "09:00", t: "Breakfast", c: "life", d: "30m" },
+      { s: "09:00", e: "10:30", t: "Finals block", c: "finals", d: "90m" },
+      { s: "10:30", e: "12:00", t: "Essay block", c: "essays", d: "90m" },
+      { s: "12:00", e: "13:00", t: "Lunch", c: "life", d: "60m" },
+      { s: "13:00", e: "14:30", t: "Startup block", c: "lnat", d: "90m" },
+      { s: "14:30", e: "15:00", t: "Power nap", c: "rest", d: "30m" },
+      { s: "15:00", e: "16:00", t: "Finals review", c: "finals", d: "60m" },
+      { s: "16:00", e: "17:00", t: "Gym", c: "fitness", d: "60m" },
+      { s: "17:00", e: "18:00", t: "Startup block", c: "lnat", d: "60m" },
+      { s: "18:00", e: "19:00", t: "Dinner", c: "life", d: "60m" },
+      { s: "19:00", e: "21:00", t: "Startup block", c: "lnat", d: "120m" },
       { s: "21:00", e: "23:00", t: "Wind-down", c: "rest", d: "120m" },
     ],
   },
@@ -54,17 +55,17 @@ const SEED_SCHEDULES: { energy: string; phase: string; blocks: any[] }[] = [
     phase: "revision",
     blocks: [
       { s: "08:00", e: "08:30", t: "Wake & water", c: "rest", d: "30m" },
-      { s: "08:30", e: "09:30", t: "Breakfast", c: "life", d: "60m" },
-      { s: "09:30", e: "11:00", t: "Finals block", c: "finals", d: "90m" },
-      { s: "11:00", e: "12:30", t: "Past papers", c: "finals", d: "90m" },
-      { s: "12:30", e: "13:30", t: "Lunch", c: "life", d: "60m" },
-      { s: "13:30", e: "15:00", t: "Startup block", c: "lnat", d: "90m" },
-      { s: "15:00", e: "15:30", t: "Power nap", c: "rest", d: "30m" },
-      { s: "15:30", e: "16:30", t: "Finals review", c: "finals", d: "60m" },
-      { s: "16:30", e: "17:30", t: "Gym", c: "fitness", d: "60m" },
-      { s: "17:30", e: "18:30", t: "Startup block", c: "lnat", d: "60m" },
-      { s: "18:30", e: "19:30", t: "Dinner", c: "life", d: "60m" },
-      { s: "19:30", e: "21:00", t: "Startup block", c: "lnat", d: "90m" },
+      { s: "08:30", e: "09:00", t: "Breakfast", c: "life", d: "30m" },
+      { s: "09:00", e: "10:30", t: "Finals block", c: "finals", d: "90m" },
+      { s: "10:30", e: "12:00", t: "Past papers", c: "finals", d: "90m" },
+      { s: "12:00", e: "13:00", t: "Lunch", c: "life", d: "60m" },
+      { s: "13:00", e: "14:30", t: "Startup block", c: "lnat", d: "90m" },
+      { s: "14:30", e: "15:00", t: "Power nap", c: "rest", d: "30m" },
+      { s: "15:00", e: "16:00", t: "Finals review", c: "finals", d: "60m" },
+      { s: "16:00", e: "17:00", t: "Gym", c: "fitness", d: "60m" },
+      { s: "17:00", e: "18:00", t: "Startup block", c: "lnat", d: "60m" },
+      { s: "18:00", e: "19:00", t: "Dinner", c: "life", d: "60m" },
+      { s: "19:00", e: "21:00", t: "Startup block", c: "lnat", d: "120m" },
       { s: "21:00", e: "23:00", t: "Wind-down", c: "rest", d: "120m" },
     ],
   },
@@ -73,17 +74,17 @@ const SEED_SCHEDULES: { energy: string; phase: string; blocks: any[] }[] = [
     phase: "",
     blocks: [
       { s: "08:00", e: "08:30", t: "Wake slowly", c: "rest", d: "30m" },
-      { s: "08:30", e: "09:30", t: "Breakfast", c: "life", d: "60m" },
-      { s: "09:30", e: "10:30", t: "Finals block (light)", c: "finals", d: "60m" },
-      { s: "10:30", e: "11:00", t: "Quiet time", c: "rest", d: "30m" },
-      { s: "11:00", e: "12:30", t: "Startup block", c: "lnat", d: "90m" },
-      { s: "12:30", e: "13:30", t: "Lunch + slow walk", c: "life", d: "60m" },
-      { s: "13:30", e: "14:30", t: "Flashcards", c: "finals", d: "60m" },
-      { s: "14:30", e: "15:00", t: "Mobility / easy walk", c: "fitness", d: "30m" },
-      { s: "15:00", e: "17:00", t: "Tea / nap", c: "rest", d: "120m" },
-      { s: "17:00", e: "18:00", t: "Startup block (optional)", c: "lnat", d: "60m" },
-      { s: "18:00", e: "19:00", t: "Dinner", c: "life", d: "60m" },
-      { s: "19:00", e: "22:00", t: "Reading", c: "rest", d: "180m" },
+      { s: "08:30", e: "09:00", t: "Breakfast", c: "life", d: "30m" },
+      { s: "09:00", e: "10:00", t: "Finals block (light)", c: "finals", d: "60m" },
+      { s: "10:00", e: "10:30", t: "Quiet time", c: "rest", d: "30m" },
+      { s: "10:30", e: "12:00", t: "Startup block", c: "lnat", d: "90m" },
+      { s: "12:00", e: "13:00", t: "Lunch + slow walk", c: "life", d: "60m" },
+      { s: "13:00", e: "14:00", t: "Flashcards", c: "finals", d: "60m" },
+      { s: "14:00", e: "14:30", t: "Mobility / easy walk", c: "fitness", d: "30m" },
+      { s: "14:30", e: "16:30", t: "Tea / nap", c: "rest", d: "120m" },
+      { s: "16:30", e: "17:30", t: "Startup block (optional)", c: "lnat", d: "60m" },
+      { s: "17:30", e: "18:30", t: "Dinner", c: "life", d: "60m" },
+      { s: "18:30", e: "22:00", t: "Wind-down", c: "rest", d: "210m" },
     ],
   },
   {
@@ -91,15 +92,15 @@ const SEED_SCHEDULES: { energy: string; phase: string; blocks: any[] }[] = [
     phase: "",
     blocks: [
       { s: "08:00", e: "08:30", t: "Wake gently", c: "rest", d: "30m" },
-      { s: "08:30", e: "09:30", t: "Breakfast", c: "life", d: "60m" },
-      { s: "09:30", e: "10:30", t: "Audiobook (finals)", c: "finals", d: "60m" },
-      { s: "10:30", e: "12:00", t: "Rest / nap", c: "rest", d: "90m" },
-      { s: "12:00", e: "13:00", t: "Lunch", c: "life", d: "60m" },
-      { s: "13:00", e: "15:00", t: "Sleep / quiet rest", c: "rest", d: "120m" },
-      { s: "15:00", e: "15:30", t: "Gentle walk", c: "fitness", d: "30m" },
-      { s: "15:30", e: "17:30", t: "Rest", c: "rest", d: "120m" },
-      { s: "17:30", e: "18:30", t: "Dinner", c: "life", d: "60m" },
-      { s: "18:30", e: "21:00", t: "Reading", c: "rest", d: "150m" },
+      { s: "08:30", e: "09:00", t: "Breakfast", c: "life", d: "30m" },
+      { s: "09:00", e: "10:00", t: "Audiobook (finals)", c: "finals", d: "60m" },
+      { s: "10:00", e: "11:30", t: "Rest / nap", c: "rest", d: "90m" },
+      { s: "11:30", e: "12:30", t: "Lunch", c: "life", d: "60m" },
+      { s: "12:30", e: "14:30", t: "Sleep / quiet rest", c: "rest", d: "120m" },
+      { s: "14:30", e: "15:00", t: "Gentle walk", c: "fitness", d: "30m" },
+      { s: "15:00", e: "17:00", t: "Rest", c: "rest", d: "120m" },
+      { s: "17:00", e: "18:00", t: "Dinner", c: "life", d: "60m" },
+      { s: "18:00", e: "21:00", t: "Wind-down", c: "rest", d: "180m" },
     ],
   },
 ];
@@ -122,8 +123,9 @@ const SEED_LECTURES: Record<number, any[]> = {
   5: [
     { s: "13:40", e: "14:00", t: "Walk to lecture", c: "lecture", d: "20m" },
     { s: "14:00", e: "15:00", t: "Gen Phil", c: "lecture", d: "60m" },
-    { s: "15:00", e: "16:30", t: "Stats", c: "lecture", d: "90m" },
-    { s: "16:30", e: "16:50", t: "Walk back", c: "lecture", d: "20m" },
+    { s: "15:00", e: "15:20", t: "Walk between", c: "lecture", d: "20m" },
+    { s: "15:20", e: "16:50", t: "Stats", c: "lecture", d: "90m" },
+    { s: "16:50", e: "17:10", t: "Walk back", c: "lecture", d: "20m" },
   ],
 };
 
