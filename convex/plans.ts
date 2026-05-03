@@ -19,6 +19,114 @@ const BLOCK_VALIDATOR = v.object({
   d: v.string(),
 });
 
+// ─────────────── Canonical seed data ───────────────
+// Block titles are intentionally generic ("Startup block" not "LNAT —
+// talk to one user") so the schedule doesn't dictate what to do inside
+// each block. Category id "lnat" is preserved (foreign key on existing
+// data); the visible label flips to "Startup" on the React side.
+
+const SEED_SCHEDULES: { energy: string; phase: string; blocks: any[] }[] = [
+  {
+    energy: "high",
+    phase: "essay",
+    blocks: [
+      { s: "08:00", e: "08:30", t: "Wake & water", c: "rest", d: "30m" },
+      { s: "08:30", e: "10:00", t: "Finals block", c: "finals", d: "90m" },
+      { s: "10:00", e: "10:30", t: "Breakfast", c: "life", d: "30m" },
+      { s: "10:30", e: "12:00", t: "Essay block", c: "essays", d: "90m" },
+      { s: "12:00", e: "12:30", t: "Mid-morning rest", c: "rest", d: "30m" },
+      { s: "12:30", e: "14:00", t: "Startup block", c: "lnat", d: "90m" },
+      { s: "14:00", e: "15:00", t: "Lunch + walk", c: "life", d: "60m" },
+      { s: "15:00", e: "15:30", t: "Power nap", c: "rest", d: "30m" },
+      { s: "15:30", e: "16:30", t: "Finals review", c: "finals", d: "60m" },
+      { s: "16:30", e: "17:30", t: "Gym", c: "fitness", d: "60m" },
+      { s: "17:30", e: "18:00", t: "Rest", c: "rest", d: "30m" },
+      { s: "18:00", e: "19:00", t: "Startup block", c: "lnat", d: "60m" },
+      { s: "19:00", e: "20:00", t: "Dinner", c: "life", d: "60m" },
+      { s: "20:00", e: "21:00", t: "Startup block", c: "lnat", d: "60m" },
+      { s: "21:00", e: "23:00", t: "Wind-down", c: "rest", d: "120m" },
+    ],
+  },
+  {
+    energy: "high",
+    phase: "revision",
+    blocks: [
+      { s: "08:00", e: "08:30", t: "Wake & water", c: "rest", d: "30m" },
+      { s: "08:30", e: "10:00", t: "Finals block", c: "finals", d: "90m" },
+      { s: "10:00", e: "10:30", t: "Breakfast", c: "life", d: "30m" },
+      { s: "10:30", e: "12:00", t: "Past papers", c: "finals", d: "90m" },
+      { s: "12:00", e: "12:30", t: "Mid-morning rest", c: "rest", d: "30m" },
+      { s: "12:30", e: "14:00", t: "Startup block", c: "lnat", d: "90m" },
+      { s: "14:00", e: "15:00", t: "Lunch + walk", c: "life", d: "60m" },
+      { s: "15:00", e: "15:30", t: "Power nap", c: "rest", d: "30m" },
+      { s: "15:30", e: "16:30", t: "Finals review", c: "finals", d: "60m" },
+      { s: "16:30", e: "17:30", t: "Gym", c: "fitness", d: "60m" },
+      { s: "17:30", e: "18:00", t: "Rest", c: "rest", d: "30m" },
+      { s: "18:00", e: "19:00", t: "Startup block", c: "lnat", d: "60m" },
+      { s: "19:00", e: "20:00", t: "Dinner", c: "life", d: "60m" },
+      { s: "20:00", e: "21:00", t: "Startup block", c: "lnat", d: "60m" },
+      { s: "21:00", e: "23:00", t: "Wind-down", c: "rest", d: "120m" },
+    ],
+  },
+  {
+    energy: "low",
+    phase: "",
+    blocks: [
+      { s: "08:00", e: "09:00", t: "Wake slowly", c: "rest", d: "60m" },
+      { s: "09:00", e: "10:00", t: "Finals block (light)", c: "finals", d: "60m" },
+      { s: "10:00", e: "11:00", t: "Slow breakfast", c: "life", d: "60m" },
+      { s: "11:00", e: "11:30", t: "Quiet time", c: "rest", d: "30m" },
+      { s: "11:30", e: "13:00", t: "Startup block", c: "lnat", d: "90m" },
+      { s: "13:00", e: "14:30", t: "Lunch + slow walk", c: "life", d: "90m" },
+      { s: "14:30", e: "15:30", t: "Flashcards", c: "finals", d: "60m" },
+      { s: "15:30", e: "16:00", t: "Mobility / easy walk", c: "fitness", d: "30m" },
+      { s: "16:00", e: "17:30", t: "Tea / nap", c: "rest", d: "90m" },
+      { s: "17:30", e: "18:30", t: "Startup block (optional)", c: "lnat", d: "60m" },
+      { s: "18:30", e: "19:30", t: "Dinner", c: "life", d: "60m" },
+      { s: "19:30", e: "22:00", t: "Reading", c: "rest", d: "150m" },
+    ],
+  },
+  {
+    energy: "moderate",
+    phase: "",
+    blocks: [
+      { s: "08:00", e: "09:00", t: "Wake gently", c: "rest", d: "60m" },
+      { s: "09:00", e: "10:00", t: "Slow breakfast", c: "life", d: "60m" },
+      { s: "10:00", e: "11:00", t: "Audiobook (finals)", c: "finals", d: "60m" },
+      { s: "11:00", e: "12:30", t: "Rest / nap", c: "rest", d: "90m" },
+      { s: "12:30", e: "13:30", t: "Lunch", c: "life", d: "60m" },
+      { s: "13:30", e: "15:30", t: "Sleep / quiet rest", c: "rest", d: "120m" },
+      { s: "15:30", e: "16:00", t: "Gentle walk", c: "fitness", d: "30m" },
+      { s: "16:00", e: "17:30", t: "Rest", c: "rest", d: "90m" },
+      { s: "17:30", e: "18:30", t: "Dinner", c: "life", d: "60m" },
+      { s: "18:30", e: "20:30", t: "Reading", c: "rest", d: "120m" },
+    ],
+  },
+];
+
+const SEED_LECTURES: Record<number, any[]> = {
+  2: [
+    { s: "09:40", e: "10:00", t: "Walk to lecture", c: "lecture", d: "20m" },
+    { s: "10:00", e: "11:00", t: "Stats Lecture", c: "lecture", d: "60m" },
+    { s: "11:00", e: "12:00", t: "Psych Lecture", c: "lecture", d: "60m" },
+    { s: "12:00", e: "12:20", t: "Walk back", c: "lecture", d: "20m" },
+  ],
+  3: [
+    { s: "10:40", e: "11:00", t: "Walk to lecture", c: "lecture", d: "20m" },
+    { s: "11:00", e: "12:00", t: "Psych Lecture", c: "lecture", d: "60m" },
+    { s: "12:00", e: "12:20", t: "Walk back", c: "lecture", d: "20m" },
+    { s: "15:25", e: "15:45", t: "Walk to tutorial", c: "lecture", d: "20m" },
+    { s: "15:45", e: "16:45", t: "Psych Tutorial", c: "lecture", d: "60m" },
+    { s: "16:45", e: "17:05", t: "Walk back", c: "lecture", d: "20m" },
+  ],
+  5: [
+    { s: "13:40", e: "14:00", t: "Walk to lecture", c: "lecture", d: "20m" },
+    { s: "14:00", e: "15:00", t: "Gen Phil", c: "lecture", d: "60m" },
+    { s: "15:00", e: "16:30", t: "Stats", c: "lecture", d: "90m" },
+    { s: "16:30", e: "16:50", t: "Walk back", c: "lecture", d: "20m" },
+  ],
+};
+
 // ─────────────── Plans ───────────────
 
 export const list = query({
@@ -98,87 +206,7 @@ export const ensureTrinitySeed = mutation({
       createdAt: Date.now(),
     });
 
-    // Schedules — verbatim from life-plan.html.
-    const SCHEDULES: { energy: string; phase: string; blocks: any[] }[] = [
-      {
-        energy: "high",
-        phase: "essay",
-        blocks: [
-          { s: "08:00", e: "08:30", t: "Wake, water, daylight, no phone", c: "rest", d: "30m" },
-          { s: "08:30", e: "10:00", t: "Finals deep block 1 — hardest topic, fresh brain", c: "finals", d: "90m" },
-          { s: "10:00", e: "10:30", t: "Breakfast, plan day in 5 min", c: "life", d: "30m" },
-          { s: "10:30", e: "12:00", t: "Essay + new content writing", c: "essays", d: "90m" },
-          { s: "12:00", e: "12:30", t: "Mid-morning rest — walk, water, breathe", c: "rest", d: "30m" },
-          { s: "12:30", e: "14:00", t: "LNAT build block — ship a real change, no admin", c: "lnat", d: "90m" },
-          { s: "14:00", e: "15:00", t: "Lunch + real walk outside", c: "life", d: "60m" },
-          { s: "15:00", e: "15:30", t: "Power nap or quiet rest — no screens", c: "rest", d: "30m" },
-          { s: "15:30", e: "16:30", t: "Finals review — mark answers, flashcards", c: "finals", d: "60m" },
-          { s: "16:30", e: "17:30", t: "Gym — compound lifts", c: "fitness", d: "60m" },
-          { s: "17:30", e: "18:00", t: "Normal rest", c: "rest", d: "30m" },
-          { s: "18:00", e: "19:00", t: "LNAT — talk to one user, or marketing, or admin", c: "lnat", d: "60m" },
-          { s: "19:00", e: "20:00", t: "Dinner, no laptop at the table", c: "life", d: "60m" },
-          { s: "20:00", e: "20:45", t: "Light revision — re-read, summarize", c: "finals", d: "45m" },
-          { s: "20:45", e: "23:00", t: "Wind-down, shower, screens off by 22:00", c: "rest", d: "135m" },
-        ],
-      },
-      {
-        energy: "high",
-        phase: "revision",
-        blocks: [
-          { s: "08:00", e: "08:30", t: "Wake, water, daylight, no phone", c: "rest", d: "30m" },
-          { s: "08:30", e: "10:00", t: "Finals deep block 1 — hardest topic, fresh brain", c: "finals", d: "90m" },
-          { s: "10:00", e: "10:30", t: "Breakfast, plan day in 5 min", c: "life", d: "30m" },
-          { s: "10:30", e: "12:00", t: "Past papers under timed conditions", c: "finals", d: "90m" },
-          { s: "12:00", e: "12:30", t: "Mid-morning rest — walk, water", c: "rest", d: "30m" },
-          { s: "12:30", e: "14:00", t: "LNAT build block — ship a real change", c: "lnat", d: "90m" },
-          { s: "14:00", e: "15:00", t: "Lunch + walk", c: "life", d: "60m" },
-          { s: "15:00", e: "15:30", t: "Power nap or quiet rest", c: "rest", d: "30m" },
-          { s: "15:30", e: "16:30", t: "Finals review — mark answers, flashcards", c: "finals", d: "60m" },
-          { s: "16:30", e: "17:30", t: "Gym — compound lifts", c: "fitness", d: "60m" },
-          { s: "17:30", e: "18:00", t: "Normal rest", c: "rest", d: "30m" },
-          { s: "18:00", e: "19:00", t: "LNAT — users, marketing, or admin", c: "lnat", d: "60m" },
-          { s: "19:00", e: "20:00", t: "Dinner", c: "life", d: "60m" },
-          { s: "20:00", e: "20:45", t: "Light revision", c: "finals", d: "45m" },
-          { s: "20:45", e: "23:00", t: "Wind-down", c: "rest", d: "135m" },
-        ],
-      },
-      {
-        energy: "low",
-        phase: "",
-        blocks: [
-          { s: "08:00", e: "09:00", t: "Wake slowly, hydrate, sunlight, no phone", c: "rest", d: "60m" },
-          { s: "09:00", e: "10:00", t: "One focused finals block — easier material, no past papers", c: "finals", d: "60m" },
-          { s: "10:00", e: "11:00", t: "Long, slow breakfast", c: "life", d: "60m" },
-          { s: "11:00", e: "11:30", t: "Quiet time — sit, breathe, no input", c: "rest", d: "30m" },
-          { s: "11:30", e: "13:00", t: "LNAT — pick something concrete you can finish today", c: "lnat", d: "90m" },
-          { s: "13:00", e: "14:30", t: "Lunch + slow walk in daylight", c: "life", d: "90m" },
-          { s: "14:30", e: "15:30", t: "Flashcards, re-reading — no new material", c: "finals", d: "60m" },
-          { s: "15:30", e: "16:00", t: "Mobility, stretch, easy walk — no lifting", c: "fitness", d: "30m" },
-          { s: "16:00", e: "17:30", t: "Tea, reading, or nap if needed", c: "rest", d: "90m" },
-          { s: "17:30", e: "18:30", t: "Optional LNAT admin — only if energy returned", c: "lnat", d: "60m" },
-          { s: "18:30", e: "19:30", t: "Dinner", c: "life", d: "60m" },
-          { s: "19:30", e: "22:00", t: "Read fiction, no work, no email", c: "rest", d: "150m" },
-        ],
-      },
-      {
-        energy: "moderate",
-        phase: "",
-        blocks: [
-          { s: "08:00", e: "09:00", t: "Wake gently, hydrate, no phone", c: "rest", d: "60m" },
-          { s: "09:00", e: "10:00", t: "Slow, comforting breakfast", c: "life", d: "60m" },
-          { s: "10:00", e: "11:00", t: "Audiobook on a finals topic, lying down", c: "finals", d: "60m" },
-          { s: "11:00", e: "12:30", t: "Rest, nap if needed", c: "rest", d: "90m" },
-          { s: "12:30", e: "13:30", t: "Lunch — anything that feels good", c: "life", d: "60m" },
-          { s: "13:30", e: "15:30", t: "Sleep / nap / quiet rest", c: "rest", d: "120m" },
-          { s: "15:30", e: "16:00", t: "Optional gentle walk if able", c: "fitness", d: "30m" },
-          { s: "16:00", e: "17:30", t: "Rest, hydrate, comfort", c: "rest", d: "90m" },
-          { s: "17:30", e: "18:30", t: "Dinner", c: "life", d: "60m" },
-          { s: "18:30", e: "20:30", t: "Reading, no screens", c: "rest", d: "120m" },
-        ],
-      },
-    ];
-
-    for (const sched of SCHEDULES) {
+    for (const sched of SEED_SCHEDULES) {
       await ctx.db.insert("plan_schedules", {
         userId,
         planId,
@@ -187,45 +215,21 @@ export const ensureTrinitySeed = mutation({
         blocks: sched.blocks,
       });
     }
-
-    // Lectures — Tuesday/Wednesday/Friday recurring fixtures.
-    const LECTURES: Record<number, any[]> = {
-      2: [
-        { s: "09:40", e: "10:00", t: "Walk to lecture", c: "lecture", d: "20m" },
-        { s: "10:00", e: "11:00", t: "Stats Lecture", c: "lecture", d: "60m" },
-        { s: "11:00", e: "12:00", t: "Psych Lecture", c: "lecture", d: "60m" },
-        { s: "12:00", e: "12:20", t: "Walk back", c: "lecture", d: "20m" },
-      ],
-      3: [
-        { s: "10:40", e: "11:00", t: "Walk to lecture", c: "lecture", d: "20m" },
-        { s: "11:00", e: "12:00", t: "Psych Lecture", c: "lecture", d: "60m" },
-        { s: "12:00", e: "12:20", t: "Walk back", c: "lecture", d: "20m" },
-        { s: "15:25", e: "15:45", t: "Walk to tutorial", c: "lecture", d: "20m" },
-        { s: "15:45", e: "16:45", t: "Psych Tutorial", c: "lecture", d: "60m" },
-        { s: "16:45", e: "17:05", t: "Walk back", c: "lecture", d: "20m" },
-      ],
-      5: [
-        { s: "13:40", e: "14:00", t: "Walk to lecture", c: "lecture", d: "20m" },
-        { s: "14:00", e: "15:00", t: "Gen Phil", c: "lecture", d: "60m" },
-        { s: "15:00", e: "16:30", t: "Stats", c: "lecture", d: "90m" },
-        { s: "16:30", e: "16:50", t: "Walk back", c: "lecture", d: "20m" },
-      ],
-    };
-    for (const dowStr of Object.keys(LECTURES)) {
+    for (const dowStr of Object.keys(SEED_LECTURES)) {
       const dow = Number(dowStr);
       await ctx.db.insert("plan_lectures", {
         userId,
         planId,
         dow,
-        blocks: LECTURES[dow],
+        blocks: SEED_LECTURES[dow],
       });
     }
 
     // Rules.
     const RULES = [
       { ifText: "two low-energy days in a row", thenText: "take a sick day, don't push through" },
-      { ifText: "finals coverage slips", thenText: "cut social/buffer time first, not LNAT (protect both pillars)" },
-      { ifText: "LNAT has a real fire (outage, customer crisis)", thenText: "flip the day: LNAT primary, finals = flashcards only" },
+      { ifText: "finals coverage slips", thenText: "cut social/buffer time first, not startup (protect both pillars)" },
+      { ifText: "startup has a real fire (outage, customer crisis)", thenText: "flip the day: startup primary, finals = flashcards only" },
       { ifText: "a week ends and 3+ gym sessions missed", thenText: "the schedule is wrong, drop one lift day to three" },
     ];
     for (let i = 0; i < RULES.length; i++) {
@@ -239,6 +243,50 @@ export const ensureTrinitySeed = mutation({
     }
 
     return planId;
+  },
+});
+
+// Wipe an existing plan's schedules + lectures and reinsert the canonical
+// seed values. Useful when the seed data evolves (renames, added blocks)
+// and you want your existing plan to pick up the new defaults without
+// editing every block by hand. Does NOT touch tracking, energy choices,
+// rules, or goal links — those represent user intent.
+export const resetTrinityDefaults = mutation({
+  args: { planId: v.id("plans") },
+  handler: async (ctx, { planId }) => {
+    const userId = await requireUserId(ctx);
+    await getOwned(ctx, planId, userId);
+
+    const oldSchedules = await ctx.db
+      .query("plan_schedules")
+      .withIndex("by_plan", (q) => q.eq("planId", planId))
+      .collect();
+    for (const s of oldSchedules) await ctx.db.delete(s._id);
+
+    const oldLectures = await ctx.db
+      .query("plan_lectures")
+      .withIndex("by_plan", (q) => q.eq("planId", planId))
+      .collect();
+    for (const l of oldLectures) await ctx.db.delete(l._id);
+
+    for (const sched of SEED_SCHEDULES) {
+      await ctx.db.insert("plan_schedules", {
+        userId,
+        planId,
+        energy: sched.energy,
+        phase: sched.phase,
+        blocks: sched.blocks,
+      });
+    }
+    for (const dowStr of Object.keys(SEED_LECTURES)) {
+      const dow = Number(dowStr);
+      await ctx.db.insert("plan_lectures", {
+        userId,
+        planId,
+        dow,
+        blocks: SEED_LECTURES[dow],
+      });
+    }
   },
 });
 

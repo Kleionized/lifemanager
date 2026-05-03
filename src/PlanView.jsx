@@ -11,10 +11,13 @@ import { isoDate, parseISO, addDays, daysBetween, mondayOf } from "./dates";
 
 // ──────────────── Constants ────────────────
 
+// Category id "lnat" is preserved (existing data references it) but the
+// user-visible label is "Startup" — the broader thing the user is actually
+// working on, of which LNAT is one expression.
 const CATEGORIES = [
   { id: "finals", label: "Finals", goalCategory: true },
   { id: "essays", label: "Essays", goalCategory: false },
-  { id: "lnat", label: "LNAT", goalCategory: true },
+  { id: "lnat", label: "Startup", goalCategory: true },
   { id: "fitness", label: "Fitness", goalCategory: true },
   { id: "life", label: "Life", goalCategory: false },
   { id: "rest", label: "Rest", goalCategory: false },
@@ -58,7 +61,9 @@ const DAY_SHORT = ["Sun", "Mon", "Tue", "Wed", "Thu", "Fri", "Sat"];
 const TIMELINE_START_MIN = 6 * 60; // 06:00
 const TIMELINE_END_MIN = 23 * 60; // 23:00
 const TIMELINE_SPAN_MIN = TIMELINE_END_MIN - TIMELINE_START_MIN;
-const PX_PER_MIN = 0.85;
+// Google-Calendar-style row height. 1.4 px/min → 84px/hour, comfortable for
+// 30-minute blocks to be readable without crowding.
+const PX_PER_MIN = 1.4;
 const HOUR_PX = 60 * PX_PER_MIN;
 const TIMELINE_HEIGHT_PX = TIMELINE_SPAN_MIN * PX_PER_MIN;
 const HOURS = Array.from({ length: 18 }, (_, i) => 6 + i); // 06..23
@@ -118,9 +123,11 @@ function scheduleFor(schedules, energy, phase) {
   return noPhase || null;
 }
 
-// Default energy for a date when the user hasn't picked yet — alternating
-// high / low rhythm anchored to the plan start.
+// Default energy for a date when the user hasn't picked yet. Sundays are
+// always moderate (designated rest day); everything else alternates
+// high/low anchored to the plan start.
 function defaultEnergyFor(plan, date) {
+  if (date.getDay() === 0) return "moderate";
   if (!plan?.startDate) return "high";
   const start = parseISO(plan.startDate);
   if (!start) return "high";
@@ -162,10 +169,21 @@ function eventsForDate(bundle, date) {
       }
     }
   }
+  // Lectures are fixed commitments — when they overlap any schedule
+  // template block, the lecture wins and the schedule block is dropped.
+  // Avoids visual clutter where (e.g.) an Essay block crashes into a
+  // Psych Lecture during the same hour.
+  const lectureSpans = events.filter((e) => e.c === "lecture");
+  const cleaned = events.filter((e) => {
+    if (e.c === "lecture") return true;
+    return !lectureSpans.some(
+      (lec) => e.startMin < lec.endMin && lec.startMin < e.endMin
+    );
+  });
   return {
     energy,
     dateIso,
-    events: layoutColumns(events),
+    events: layoutColumns(cleaned),
   };
 }
 
@@ -268,7 +286,7 @@ function CalendarEvent({
     >
       <div className="plan-event-title font-medium truncate">{event.t}</div>
       {!isShort && (
-        <div className="text-[10px] opacity-75 truncate">{time}</div>
+        <div className="text-[11px] opacity-75 truncate mt-0.5">{time}</div>
       )}
     </button>
   );
@@ -285,12 +303,12 @@ function NowLine({ nowMin }) {
 function TimeColumn() {
   return (
     <div className="border-r border-black/10 dark:border-white/10 select-none">
-      <div className="h-9 sticky top-0 z-[3] bg-transparent" />
+      <div className="h-11 sticky top-0 z-[3] bg-transparent" />
       {HOURS.map((h, i) => (
         <div
           key={h}
           className={[
-            "text-[10px] text-neutral-500 dark:text-neutral-400 text-right pr-2 pt-1",
+            "text-[11px] text-neutral-500 dark:text-neutral-400 text-right pr-2.5 pt-1.5",
             i === 0 ? "" : "border-t border-black/10 dark:border-white/10",
           ].join(" ")}
           style={{ height: `${HOUR_PX}px` }}
@@ -306,19 +324,18 @@ function DayHeader({ label, dom, energy, isToday }) {
   return (
     <div
       className={[
-        "h-9 sticky top-0 z-[2] flex items-center justify-center gap-1.5 text-[12px] font-medium border-b backdrop-blur-md",
+        "h-11 sticky top-0 z-[2] flex items-center justify-center gap-2 text-[13px] font-medium border-b backdrop-blur-md border-black/10 dark:border-white/10",
         isToday
-          ? "border-blue-500/40 text-neutral-900 dark:text-neutral-100"
-          : "border-black/10 dark:border-white/10 text-neutral-600 dark:text-neutral-400",
-        isToday ? "bg-white/40 dark:bg-white/[0.04]" : "",
+          ? "text-neutral-900 dark:text-neutral-100"
+          : "text-neutral-600 dark:text-neutral-400",
       ].join(" ")}
     >
       <span>{label}</span>
       <span
         className={[
-          "inline-flex items-center justify-center text-[11px] rounded-full",
+          "inline-flex items-center justify-center text-[12px] rounded-full",
           isToday
-            ? "bg-blue-600 text-white w-5 h-5"
+            ? "bg-neutral-900 text-neutral-50 dark:bg-neutral-100 dark:text-neutral-900 w-6 h-6"
             : "text-neutral-700 dark:text-neutral-200 font-semibold",
         ].join(" ")}
       >
@@ -327,7 +344,7 @@ function DayHeader({ label, dom, energy, isToday }) {
       {energy && (
         <span
           className={[
-            "ml-1 text-[9px] uppercase tracking-wider px-1.5 py-px rounded",
+            "ml-1 text-[9px] uppercase tracking-wider px-1.5 py-0.5 rounded",
             energy === "sick"
               ? "bg-rose-500/15 text-rose-700 dark:text-rose-300"
               : energy === "moderate"
@@ -366,10 +383,7 @@ function DayColumn({
         isToday={isToday}
       />
       <div
-        className={[
-          "relative",
-          isToday ? "bg-blue-500/[0.04]" : "",
-        ].join(" ")}
+        className="relative"
         style={{
           height: `${TIMELINE_HEIGHT_PX}px`,
           backgroundImage:
@@ -423,11 +437,12 @@ function DayCalendar({
   return (
     <div
       ref={scrollRef}
-      className="lg-card rounded-xl overflow-auto max-h-[78vh]"
+      className="lg-card rounded-xl overflow-auto"
+      style={{ height: "calc(100vh - 15rem)", minHeight: "600px" }}
     >
       <div
         className="grid"
-        style={{ gridTemplateColumns: "56px 1fr", minWidth: "100%" }}
+        style={{ gridTemplateColumns: "64px 1fr", minWidth: "100%" }}
       >
         <TimeColumn />
         <DayColumn
@@ -472,16 +487,17 @@ function WeekCalendar({
   return (
     <div
       ref={scrollRef}
-      className="lg-card rounded-xl overflow-auto max-h-[78vh]"
+      className="lg-card rounded-xl overflow-auto"
+      style={{ height: "calc(100vh - 9rem)", minHeight: "640px" }}
     >
       <div
         className="grid"
-        style={{ gridTemplateColumns: "56px 1fr", minWidth: "880px" }}
+        style={{ gridTemplateColumns: "64px 1fr", minWidth: "1080px" }}
       >
         <TimeColumn />
         <div
           className="grid"
-          style={{ gridTemplateColumns: "repeat(7, minmax(0,1fr))" }}
+          style={{ gridTemplateColumns: "repeat(7, minmax(140px,1fr))" }}
         >
           {cols.map((c) => (
             <DayColumn
@@ -507,7 +523,7 @@ function WeekCalendar({
 function NowCard({ events, nowMin, energy, sick }) {
   if (sick) {
     return (
-      <div className="lg-card rounded-xl px-5 py-4">
+      <div className="lg-card rounded-2xl px-6 py-5">
         <div className="text-[11px] uppercase tracking-wider text-neutral-500 dark:text-neutral-400">
           Sick day
         </div>
@@ -586,7 +602,7 @@ function NowCard({ events, nowMin, energy, sick }) {
   const cat = current?.c;
   const accentVar = cat ? `var(--plan-${cat}-ac)` : "rgb(38 38 38)";
   return (
-    <div className="lg-card rounded-xl px-5 py-4">
+    <div className="lg-card rounded-2xl px-6 py-5">
       <div className="text-[11px] uppercase tracking-wider text-neutral-500 dark:text-neutral-400">
         {label}
       </div>
@@ -794,12 +810,12 @@ function TodayView({ bundle, goals, todayDate, nowMin, openTracking, mut }) {
     overlapping.find((o) => o.c === "lecture") || overlapping[0] || null;
 
   return (
-    <div className="space-y-4">
+    <div className="space-y-6">
       <header>
-        <h1 className="text-2xl font-semibold tracking-tight">
+        <h1 className="text-3xl font-semibold tracking-tight">
           Today is {DAY_FULL[todayDate.getDay()]}, week {week} of term
         </h1>
-        <p className="text-sm text-neutral-500 dark:text-neutral-400 mt-1">
+        <p className="text-sm text-neutral-500 dark:text-neutral-400 mt-2">
           {todayDate.toDateString()} ·{" "}
           {phase === "essay" ? "Essay phase" : "Revision phase"} ·{" "}
           {ENERGY_BY_ID[energy]?.label || energy}
@@ -813,7 +829,7 @@ function TodayView({ bundle, goals, todayDate, nowMin, openTracking, mut }) {
         sick={energy === "sick"}
       />
 
-      <div className="flex flex-wrap gap-2 items-center">
+      <div className="flex flex-wrap gap-3 items-center">
         <PillToggle
           options={ENERGY_LEVELS.map((e) => ({ id: e.id, label: e.label.split(" ")[0] }))}
           value={energy}
@@ -889,10 +905,10 @@ function WeekView({ bundle, todayDate, nowMin, openTracking }) {
     [bundle.tracking]
   );
   return (
-    <div className="space-y-4">
+    <div className="space-y-5">
       <header>
-        <h1 className="text-2xl font-semibold tracking-tight">This week</h1>
-        <p className="text-sm text-neutral-500 dark:text-neutral-400 mt-1">
+        <h1 className="text-3xl font-semibold tracking-tight">This week</h1>
+        <p className="text-sm text-neutral-500 dark:text-neutral-400 mt-2">
           Recurring lectures plus your daily schedule template. Today's column
           highlighted.
         </p>
@@ -1011,12 +1027,12 @@ function TermView({ bundle, todayDate, goals }) {
   };
 
   return (
-    <div className="space-y-4">
+    <div className="space-y-5">
       <header>
-        <h1 className="text-2xl font-semibold tracking-tight">
+        <h1 className="text-3xl font-semibold tracking-tight">
           {plan.name} at a glance
         </h1>
-        <p className="text-sm text-neutral-500 dark:text-neutral-400 mt-1">
+        <p className="text-sm text-neutral-500 dark:text-neutral-400 mt-2">
           {weekCount} weeks. Phase shift at week {phaseShift}.
           {examWeek ? ` Exams in week ${examWeek}.` : ""}
         </p>
@@ -1247,10 +1263,10 @@ function StatsView({ bundle }) {
   const all = bundle.tracking || [];
   if (all.length === 0) {
     return (
-      <div className="space-y-4">
+      <div className="space-y-5">
         <header>
-          <h1 className="text-2xl font-semibold tracking-tight">Analytics</h1>
-          <p className="text-sm text-neutral-500 dark:text-neutral-400 mt-1">
+          <h1 className="text-3xl font-semibold tracking-tight">Analytics</h1>
+          <p className="text-sm text-neutral-500 dark:text-neutral-400 mt-2">
             How well you've followed the plan.
           </p>
         </header>
@@ -1304,10 +1320,10 @@ function StatsView({ bundle }) {
   const pct = (n, d) => (d > 0 ? Math.round((n / d) * 100) : 0);
 
   return (
-    <div className="space-y-4">
+    <div className="space-y-5">
       <header>
-        <h1 className="text-2xl font-semibold tracking-tight">Analytics</h1>
-        <p className="text-sm text-neutral-500 dark:text-neutral-400 mt-1">
+        <h1 className="text-3xl font-semibold tracking-tight">Analytics</h1>
+        <p className="text-sm text-neutral-500 dark:text-neutral-400 mt-2">
           How well you've followed the plan.
         </p>
       </header>
@@ -1513,8 +1529,8 @@ function RulesView({ bundle, goals }) {
   return (
     <div className="space-y-6">
       <header>
-        <h1 className="text-2xl font-semibold tracking-tight">Goals & rules</h1>
-        <p className="text-sm text-neutral-500 dark:text-neutral-400 mt-1">
+        <h1 className="text-3xl font-semibold tracking-tight">Goals & rules</h1>
+        <p className="text-sm text-neutral-500 dark:text-neutral-400 mt-2">
           What this term is for, and how to decide when things go sideways.
         </p>
       </header>
@@ -1622,8 +1638,8 @@ function EditView({ bundle, goals, mut }) {
   return (
     <div className="space-y-6">
       <header>
-        <h1 className="text-2xl font-semibold tracking-tight">Edit plan</h1>
-        <p className="text-sm text-neutral-500 dark:text-neutral-400 mt-1">
+        <h1 className="text-3xl font-semibold tracking-tight">Edit plan</h1>
+        <p className="text-sm text-neutral-500 dark:text-neutral-400 mt-2">
           Tune the term, the schedules, lectures, rules, and goal links.
         </p>
       </header>
@@ -1792,9 +1808,33 @@ function SchedulesEditorCard({ bundle, mut }) {
     { energy: "low", phase: "", label: "Low energy" },
     { energy: "moderate", phase: "", label: "Moderate (mildly ill)" },
   ];
+  const [confirming, setConfirming] = useState(false);
+  const onReset = async () => {
+    if (!confirming) {
+      setConfirming(true);
+      setTimeout(() => setConfirming(false), 4000);
+      return;
+    }
+    setConfirming(false);
+    await mut.resetDefaults({ planId: bundle.plan._id });
+  };
   return (
     <section className="lg-card rounded-xl p-5">
-      <h3 className="text-sm font-semibold mb-3">Schedule templates</h3>
+      <div className="flex items-center justify-between mb-3">
+        <h3 className="text-sm font-semibold">Schedule templates</h3>
+        <button
+          onClick={onReset}
+          className={[
+            "text-xs px-2.5 py-1 rounded-md transition-colors",
+            confirming
+              ? "bg-rose-600 text-white hover:bg-rose-700"
+              : "text-neutral-600 dark:text-neutral-400 hover:bg-black/5 dark:hover:bg-white/5",
+          ].join(" ")}
+          title="Replaces every schedule + lecture with the canonical defaults. Tracking, energy choices, rules, and goal links are preserved."
+        >
+          {confirming ? "Confirm reset" : "Reset to defaults"}
+        </button>
+      </div>
       <div className="space-y-2">
         {COMBOS.map((cb) => {
           const sched = bundle.schedules.find(
@@ -2132,6 +2172,7 @@ export default function PlanView({ planSubView, setPlanSubView, bundle, goals })
   const mAddRule = useMutation(api.plans.addRule);
   const mUpdateRule = useMutation(api.plans.updateRule);
   const mDeleteRule = useMutation(api.plans.deleteRule);
+  const mResetDefaults = useMutation(api.plans.resetTrinityDefaults);
 
   const mut = useMemo(
     () => ({
@@ -2144,6 +2185,7 @@ export default function PlanView({ planSubView, setPlanSubView, bundle, goals })
       addRule: (a) => mAddRule(a),
       updateRule: (a) => mUpdateRule(a),
       deleteRule: (a) => mDeleteRule(a),
+      resetDefaults: (a) => mResetDefaults(a),
     }),
     // eslint-disable-next-line react-hooks/exhaustive-deps
     []
@@ -2167,6 +2209,9 @@ export default function PlanView({ planSubView, setPlanSubView, bundle, goals })
     if (pickerSeenRef.current) return;
     if (!bundle?.days) return;
     pickerSeenRef.current = true;
+    // Sundays are always moderate by default — the picker's contribution
+    // would just be a confirmation click. Skip it.
+    if (todayDate.getDay() === 0) return;
     if (!todayRow) {
       // Brief delay so the page paints first.
       const id = setTimeout(() => setPickerOpen(true), 250);
@@ -2191,7 +2236,7 @@ export default function PlanView({ planSubView, setPlanSubView, bundle, goals })
   };
 
   return (
-    <div className="space-y-5">
+    <div className="space-y-6">
       <PlanTabs current={planSubView} onChange={setPlanSubView} planName={bundle.plan.name} />
 
       {planSubView === "today" && (
@@ -2264,8 +2309,8 @@ export default function PlanView({ planSubView, setPlanSubView, bundle, goals })
 
 function PlanTabs({ current, onChange, planName }) {
   return (
-    <div className="flex flex-wrap items-center gap-1.5">
-      <div className="text-xs uppercase tracking-wider text-neutral-500 dark:text-neutral-400 mr-2">
+    <div className="flex flex-wrap items-center gap-2">
+      <div className="text-xs uppercase tracking-wider text-neutral-500 dark:text-neutral-400 mr-3">
         {planName}
       </div>
       {TABS.map((t) => {
@@ -2275,7 +2320,7 @@ function PlanTabs({ current, onChange, planName }) {
             key={t.id}
             onClick={() => onChange(t.id)}
             className={[
-              "inline-flex items-center gap-1.5 px-3 py-1.5 rounded-md text-[13px] transition-all",
+              "inline-flex items-center gap-1.5 px-3.5 py-2 rounded-lg text-[13px] transition-all",
               on
                 ? "bg-neutral-900 text-neutral-50 dark:bg-neutral-100 dark:text-neutral-900 shadow-sm"
                 : "lg-task text-neutral-700 dark:text-neutral-300",
