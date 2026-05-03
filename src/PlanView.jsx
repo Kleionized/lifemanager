@@ -230,31 +230,33 @@ function trimAroundLectures(scheduleEvents, lectureEvents) {
   return out;
 }
 
-// Walk the timeline; for each gap > 25 min between scheduled events,
-// drop in a filler block. A gap whose midpoint sits in [11:30, 14:30]
-// gets "Lunch" (life); everything else gets a generic study block.
-// Gaps before the first event or after the last are left alone — those
-// represent the deliberate "outside the day" margin.
+// Walk the timeline; for each gap >= 5 min between scheduled events,
+// close it by *adjusting the existing blocks* rather than inserting a
+// new filler. If the next block is a lecture (its start time is a hard
+// constraint), the previous block extends to meet it. Otherwise, the
+// next block starts earlier so it abuts the previous one. Two adjacent
+// lectures with a gap between them are left alone — both are fixed.
 function fillGaps(events) {
   if (events.length < 2) return events;
   const sorted = [...events].sort((a, b) => a.startMin - b.startMin);
-  const out = [...sorted];
-  for (let i = 0; i < sorted.length - 1; i++) {
-    const cur = sorted[i];
-    const next = sorted[i + 1];
+  const out = sorted.map((e) => ({ ...e }));
+  for (let i = 0; i < out.length - 1; i++) {
+    const cur = out[i];
+    const next = out[i + 1];
     const gap = next.startMin - cur.endMin;
-    if (gap < 25) continue;
-    const midpoint = cur.endMin + gap / 2;
-    const isLunchTime = midpoint >= 11 * 60 + 30 && midpoint <= 14 * 60 + 30;
-    out.push({
-      s: fmtMin(cur.endMin),
-      e: fmtMin(next.startMin),
-      t: isLunchTime ? "Lunch" : "Study block",
-      c: isLunchTime ? "life" : "finals",
-      d: `${gap}m`,
-      startMin: cur.endMin,
-      endMin: next.startMin,
-    });
+    if (gap < 5) continue;
+    const prevIsLecture = cur.c === "lecture";
+    const nextIsLecture = next.c === "lecture";
+    if (prevIsLecture && nextIsLecture) continue;
+    if (nextIsLecture) {
+      cur.endMin = next.startMin;
+      cur.e = fmtMin(cur.endMin);
+      cur.d = `${cur.endMin - cur.startMin}m`;
+    } else {
+      next.startMin = cur.endMin;
+      next.s = fmtMin(next.startMin);
+      next.d = `${next.endMin - next.startMin}m`;
+    }
   }
   return out;
 }
