@@ -30,7 +30,7 @@ const ENERGY_LEVELS = [
   {
     id: "high",
     label: "High energy",
-    sub: "Full schedule — finals + LNAT + gym",
+    sub: "Full schedule — finals + startup + gym",
   },
   {
     id: "low",
@@ -43,7 +43,15 @@ const ENERGY_LEVELS = [
     sub: "Audiobook + naps, no real work",
   },
   { id: "sick", label: "Sick / unwell", sub: "Nothing. Sleep is the work." },
+  {
+    id: "free",
+    label: "Free day",
+    sub: "No plan. Default for Sundays.",
+  },
 ];
+
+// Energy ids that produce zero blocks on the timetable.
+const NO_BLOCKS_ENERGIES = new Set(["sick", "free"]);
 
 const ENERGY_BY_ID = Object.fromEntries(ENERGY_LEVELS.map((e) => [e.id, e]));
 
@@ -112,9 +120,10 @@ function effectivePhaseFor(plan, date) {
 
 // Pick a schedule from the bundle for a given (energy, phase). Falls back
 // to phase="" if a phase-specific row doesn't exist (e.g. low/moderate
-// don't split by phase).
+// don't split by phase). Sick / free always render no blocks.
 function scheduleFor(schedules, energy, phase) {
-  if (!schedules || energy === "sick") return null;
+  if (!schedules) return null;
+  if (NO_BLOCKS_ENERGIES.has(energy)) return null;
   const exact = schedules.find(
     (s) => s.energy === energy && s.phase === phase
   );
@@ -124,10 +133,10 @@ function scheduleFor(schedules, energy, phase) {
 }
 
 // Default energy for a date when the user hasn't picked yet. Sundays are
-// always moderate (designated rest day); everything else alternates
-// high/low anchored to the plan start.
+// "free" days with zero blocks; everything else alternates high/low
+// anchored to the plan start.
 function defaultEnergyFor(plan, date) {
-  if (date.getDay() === 0) return "moderate";
+  if (date.getDay() === 0) return "free";
   if (!plan?.startDate) return "high";
   const start = parseISO(plan.startDate);
   if (!start) return "high";
@@ -142,7 +151,7 @@ function eventsForDate(bundle, date) {
   const dow = date.getDay();
   const dayRow = bundle.days.find((d) => d.date === dateIso);
   const energy = dayRow?.energy || defaultEnergyFor(bundle.plan, date);
-  if (energy === "sick") return { energy, dateIso, events: [] };
+  if (NO_BLOCKS_ENERGIES.has(energy)) return { energy, dateIso, events: [] };
 
   const phase = effectivePhaseFor(bundle.plan, date);
   const sched = scheduleFor(bundle.schedules, energy, phase);
@@ -169,22 +178,85 @@ function eventsForDate(bundle, date) {
       }
     }
   }
-  // Lectures are fixed commitments — when they overlap any schedule
-  // template block, the lecture wins and the schedule block is dropped.
-  // Avoids visual clutter where (e.g.) an Essay block crashes into a
-  // Psych Lecture during the same hour.
+  // Lectures are fixed commitments. Instead of dropping a 90-minute
+  // schedule block because its tail clashes with a lecture, slice the
+  // schedule block into the segment(s) that don't overlap. Then fill
+  // any remaining > 25-minute gaps with a generic study block (or lunch
+  // if it lands in the lunch window).
   const lectureSpans = events.filter((e) => e.c === "lecture");
-  const cleaned = events.filter((e) => {
-    if (e.c === "lecture") return true;
-    return !lectureSpans.some(
-      (lec) => e.startMin < lec.endMin && lec.startMin < e.endMin
-    );
-  });
+  const scheduleSpans = events.filter((e) => e.c !== "lecture");
+  const trimmed = trimAroundLectures(scheduleSpans, lectureSpans);
+  const filled = fillGaps([...lectureSpans, ...trimmed]);
   return {
     energy,
     dateIso,
-    events: layoutColumns(cleaned),
+    events: layoutColumns(filled),
   };
+}
+
+// Cut each schedule block around lecture overlaps. If a lecture sits in
+// the middle, the block splits into two segments (before/after). If the
+// remainder is shorter than ~15 min after slicing, drop that fragment —
+// it's not enough time to be worth showing.
+function trimAroundLectures(scheduleEvents, lectureEvents) {
+  const out = [];
+  for (const ev of scheduleEvents) {
+    let segments = [{ s: ev.startMin, e: ev.endMin }];
+    for (const lec of lectureEvents) {
+      const next = [];
+      for (const seg of segments) {
+        if (lec.endMin <= seg.s || lec.startMin >= seg.e) {
+          next.push(seg);
+        } else {
+          if (lec.startMin > seg.s) next.push({ s: seg.s, e: lec.startMin });
+          if (lec.endMin < seg.e) next.push({ s: lec.endMin, e: seg.e });
+        }
+      }
+      segments = next;
+    }
+    for (const seg of segments) {
+      const dur = seg.e - seg.s;
+      if (dur < 15) continue;
+      out.push({
+        ...ev,
+        startMin: seg.s,
+        endMin: seg.e,
+        s: fmtMin(seg.s),
+        e: fmtMin(seg.e),
+        d: `${dur}m`,
+      });
+    }
+  }
+  return out;
+}
+
+// Walk the timeline; for each gap > 25 min between scheduled events,
+// drop in a filler block. A gap whose midpoint sits in [11:30, 14:30]
+// gets "Lunch" (life); everything else gets a generic study block.
+// Gaps before the first event or after the last are left alone — those
+// represent the deliberate "outside the day" margin.
+function fillGaps(events) {
+  if (events.length < 2) return events;
+  const sorted = [...events].sort((a, b) => a.startMin - b.startMin);
+  const out = [...sorted];
+  for (let i = 0; i < sorted.length - 1; i++) {
+    const cur = sorted[i];
+    const next = sorted[i + 1];
+    const gap = next.startMin - cur.endMin;
+    if (gap < 25) continue;
+    const midpoint = cur.endMin + gap / 2;
+    const isLunchTime = midpoint >= 11 * 60 + 30 && midpoint <= 14 * 60 + 30;
+    out.push({
+      s: fmtMin(cur.endMin),
+      e: fmtMin(next.startMin),
+      t: isLunchTime ? "Lunch" : "Study block",
+      c: isLunchTime ? "life" : "finals",
+      d: `${gap}m`,
+      startMin: cur.endMin,
+      endMin: next.startMin,
+    });
+  }
+  return out;
 }
 
 // Pack overlapping events into columns. Each event gets `col` and
@@ -347,11 +419,13 @@ function DayHeader({ label, dom, energy, isToday }) {
             "ml-1 text-[9px] uppercase tracking-wider px-1.5 py-0.5 rounded",
             energy === "sick"
               ? "bg-rose-500/15 text-rose-700 dark:text-rose-300"
-              : energy === "moderate"
-                ? "bg-pink-500/15 text-pink-700 dark:text-pink-300"
-                : energy === "low"
-                  ? "bg-violet-500/15 text-violet-700 dark:text-violet-300"
-                  : "bg-emerald-500/15 text-emerald-700 dark:text-emerald-300",
+              : energy === "free"
+                ? "bg-sky-500/15 text-sky-700 dark:text-sky-300"
+                : energy === "moderate"
+                  ? "bg-pink-500/15 text-pink-700 dark:text-pink-300"
+                  : energy === "low"
+                    ? "bg-violet-500/15 text-violet-700 dark:text-violet-300"
+                    : "bg-emerald-500/15 text-emerald-700 dark:text-emerald-300",
           ].join(" ")}
         >
           {energy}
@@ -392,9 +466,9 @@ function DayColumn({
           backgroundRepeat: "repeat-y",
         }}
       >
-        {energy === "sick" ? (
+        {NO_BLOCKS_ENERGIES.has(energy) ? (
           <div className="absolute inset-0 flex items-center justify-center px-3 text-center text-xs text-neutral-500 dark:text-neutral-400">
-            Rest day. No schedule.
+            {energy === "free" ? "Free day. No schedule." : "Rest day. No schedule."}
           </div>
         ) : (
           events.map((ev) => {
@@ -475,9 +549,12 @@ function WeekCalendar({
       scrollRef.current.scrollTop = (7 - 6) * HOUR_PX - 12;
     }
   }, []);
+  // Mon–Sat only. Sundays are intentionally omitted from the week view —
+  // they're free days with no plan, so they'd just render as a blank
+  // column eating real estate.
   const cols = useMemo(() => {
     const out = [];
-    for (let i = 0; i < 7; i++) {
+    for (let i = 0; i < 6; i++) {
       const d = addDays(monday, i);
       const computed = eventsForDate(bundle, d);
       out.push({ date: d, ...computed });
@@ -492,12 +569,12 @@ function WeekCalendar({
     >
       <div
         className="grid"
-        style={{ gridTemplateColumns: "64px 1fr", minWidth: "1080px" }}
+        style={{ gridTemplateColumns: "64px 1fr", minWidth: "960px" }}
       >
         <TimeColumn />
         <div
           className="grid"
-          style={{ gridTemplateColumns: "repeat(7, minmax(140px,1fr))" }}
+          style={{ gridTemplateColumns: "repeat(6, minmax(140px,1fr))" }}
         >
           {cols.map((c) => (
             <DayColumn
@@ -520,15 +597,18 @@ function WeekCalendar({
 
 // ──────────────── Now card (current block + progress + next) ────────────────
 
-function NowCard({ events, nowMin, energy, sick }) {
-  if (sick) {
+function NowCard({ events, nowMin, energy, noBlocks }) {
+  if (noBlocks) {
+    const isFree = energy === "free";
     return (
       <div className="lg-card rounded-2xl px-6 py-5">
         <div className="text-[11px] uppercase tracking-wider text-neutral-500 dark:text-neutral-400">
-          Sick day
+          {isFree ? "Free day" : "Sick day"}
         </div>
         <div className="text-base font-medium mt-1">
-          Rest. That is the schedule.
+          {isFree
+            ? "No plan today. Do whatever feels right."
+            : "Rest. That is the schedule."}
         </div>
         <div className="text-xs text-neutral-500 dark:text-neutral-400 mt-3 pt-3 border-t border-black/10 dark:border-white/10">
           Tomorrow: resume normal plan.
@@ -826,7 +906,7 @@ function TodayView({ bundle, goals, todayDate, nowMin, openTracking, mut }) {
         events={events}
         nowMin={nowMin}
         energy={energy}
-        sick={energy === "sick"}
+        noBlocks={NO_BLOCKS_ENERGIES.has(energy)}
       />
 
       <div className="flex flex-wrap gap-3 items-center">
@@ -858,14 +938,15 @@ function TodayView({ bundle, goals, todayDate, nowMin, openTracking, mut }) {
         />
       </div>
 
-      {energy === "sick" ? (
+      {NO_BLOCKS_ENERGIES.has(energy) ? (
         <div className="lg-card rounded-xl p-10 text-center">
           <div className="inline-block px-3 py-1.5 rounded-md text-sm bg-neutral-200/60 dark:bg-neutral-800/60 text-neutral-700 dark:text-neutral-300">
             No schedule today.
           </div>
           <p className="mt-4 text-sm text-neutral-500 dark:text-neutral-400 max-w-md mx-auto">
-            Sleep is the work. Hydrate, rest, send one message to your
-            co-founder, then close Slack. Resume tomorrow — don't catch up.
+            {energy === "free"
+              ? "Free day. Do whatever feels right — no targets, no quota. The plan resumes tomorrow."
+              : "Sleep is the work. Hydrate, rest, send one message to your co-founder, then close Slack. Resume tomorrow — don't catch up."}
           </p>
         </div>
       ) : (
