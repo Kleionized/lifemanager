@@ -17,6 +17,7 @@ import type * as habitCompletions from "../habitCompletions.js";
 import type * as habits from "../habits.js";
 import type * as http from "../http.js";
 import type * as migration from "../migration.js";
+import type * as plans from "../plans.js";
 import type * as projectTasks from "../projectTasks.js";
 import type * as projects from "../projects.js";
 import type * as ui from "../ui.js";
@@ -39,6 +40,7 @@ declare const fullApi: ApiFromModules<{
   habits: typeof habits;
   http: typeof http;
   migration: typeof migration;
+  plans: typeof plans;
   projectTasks: typeof projectTasks;
   projects: typeof projects;
   ui: typeof ui;

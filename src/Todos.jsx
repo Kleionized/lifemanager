@@ -20,6 +20,7 @@ import {
   timeRemainingTone,
 } from "./dates.js";
 import { useDataLayer } from "./dataLayer.js";
+import PlanView from "./PlanView.jsx";
 
 const solar = (name) => (props) =>
   <Icon icon={`solar:${name}-bold-duotone`} {...props} />;
@@ -128,6 +129,8 @@ function sameView(a, b) {
   if (a.type === "project") {
     return a.id === b.id && (a.week || null) === (b.week || null);
   }
+  // Plan sub-tab switches re-use the same chrome — skip the 180ms fade.
+  if (a.type === "plan") return true;
   return true;
 }
 
@@ -714,6 +717,7 @@ export default function Todos() {
     setHabitAutoGenerate, deleteHabit,
     addHabitCompletion, removeHabitCompletion, toggleHabitVirtual,
     setTaskHabitTag, importV3, popUndo,
+    plansList, activePlan, planBundle, ensureTrinitySeed,
   } = data;
 
   const [view, setView] = useState({ type: "daily" });
@@ -734,6 +738,7 @@ export default function Todos() {
   const weeklyDayRefs = useRef({});
   const projectAddRefs = useRef({});
   const migrationRunRef = useRef(false);
+  const planSeedRef = useRef(false);
   // First time the server `ui` row arrives, pull theme/view/etc. from it
   // so a second device sees the same prefs. Subsequent server updates are
   // ignored to avoid fighting with rapid local edits.
@@ -778,6 +783,7 @@ export default function Todos() {
             v.type === "weekly" ||
             v.type === "overview" ||
             v.type === "goalspage" ||
+            v.type === "plan" ||
             (v.type === "project" && typeof v.id === "string"))
         ) {
           setView(v);
@@ -970,6 +976,21 @@ export default function Todos() {
   // user is signed in and Convex queries have loaded. If the import says
   // it's a no-op (server already has data), we still wipe v3 locally so
   // the next session doesn't try again.
+  // First-time plan setup: if the user has no plan, seed the Trinity-term
+  // defaults from the original life-plan HTML. Idempotent — the mutation
+  // bails if a plan already exists.
+  useEffect(() => {
+    if (!ready) return;
+    if (plansList === null) return;
+    if (planSeedRef.current) return;
+    if (plansList && plansList.length === 0) {
+      planSeedRef.current = true;
+      ensureTrinitySeed();
+    } else if (plansList && plansList.length > 0) {
+      planSeedRef.current = true;
+    }
+  }, [ready, plansList, ensureTrinitySeed]);
+
   useEffect(() => {
     if (!ready) return;
     if (migrationRunRef.current) return;
@@ -1274,6 +1295,20 @@ export default function Todos() {
                 setView={setView}
               />
             )}
+            {displayView.type === "plan" && (
+              activePlan && planBundle ? (
+                <PlanView
+                  planSubView={view.sub || "today"}
+                  setPlanSubView={(sub) => setView({ type: "plan", sub })}
+                  bundle={planBundle}
+                  goals={state.goals}
+                />
+              ) : (
+                <div className="text-sm text-neutral-500 dark:text-neutral-400 py-10">
+                  Setting up your plan…
+                </div>
+              )
+            )}
             {displayView.type === "goalspage" && (
               <GoalsPageView
                 goalsList={state.goals}
@@ -1517,6 +1552,17 @@ function Sidebar({
           label="Goals"
           active={view.type === "goalspage"}
           onClick={() => setView({ type: "goalspage" })}
+        />
+        <SidebarItem
+          Icon={(props) => (
+            <Icon icon="solar:notebook-bold-duotone" {...props} />
+          )}
+          iconColor="text-indigo-500"
+          label="Plan"
+          active={view.type === "plan"}
+          onClick={() =>
+            setView({ type: "plan", sub: view.sub || "today" })
+          }
         />
 
         <SidebarHeader label="Projects" onAdd={onAddProject} />

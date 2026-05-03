@@ -190,6 +190,156 @@
     inset 0 0 80px rgba(255, 255, 255, 0.03);
 }
 
+/* ─── Plan category palette ───────────────────────────────────────────
+   Each category gets a translucent fill, a darker readable text color,
+   and an accent (used for legend dots, progress fills, gantt borders).
+   The light values match the original life-plan HTML; dark variants are
+   tuned-down so they stay legible on a near-black backdrop. */
+:root {
+  --plan-finals-fill: rgba(29, 158, 117, 0.18);
+  --plan-finals-text: #0F6E56;
+  --plan-finals-ac:   #1D9E75;
+
+  --plan-essays-fill: rgba(216, 90, 48, 0.16);
+  --plan-essays-text: #993C1D;
+  --plan-essays-ac:   #D85A30;
+
+  --plan-lnat-fill:   rgba(127, 119, 221, 0.18);
+  --plan-lnat-text:   #3C3489;
+  --plan-lnat-ac:     #7F77DD;
+
+  --plan-fitness-fill: rgba(186, 117, 23, 0.18);
+  --plan-fitness-text: #854F0B;
+  --plan-fitness-ac:   #BA7517;
+
+  --plan-life-fill:   rgba(212, 83, 126, 0.16);
+  --plan-life-text:   #72243E;
+  --plan-life-ac:     #D4537E;
+
+  --plan-rest-fill:   rgba(136, 135, 128, 0.16);
+  --plan-rest-text:   #5F5E5A;
+  --plan-rest-ac:     #888780;
+
+  --plan-lecture-fill: rgba(74, 111, 165, 0.16);
+  --plan-lecture-text: #1E3A5F;
+  --plan-lecture-ac:   #4A6FA5;
+
+  --plan-now-line: #cc3344;
+  --plan-completed: #1D9E75;
+  --plan-half: #BA7517;
+  --plan-missed: #cc3344;
+}
+.dark {
+  --plan-finals-fill: rgba(29, 158, 117, 0.28);
+  --plan-finals-text: #6BD9B5;
+
+  --plan-essays-fill: rgba(216, 90, 48, 0.26);
+  --plan-essays-text: #F0A589;
+
+  --plan-lnat-fill:   rgba(127, 119, 221, 0.28);
+  --plan-lnat-text:   #B5AEFE;
+
+  --plan-fitness-fill: rgba(186, 117, 23, 0.28);
+  --plan-fitness-text: #E8B66A;
+
+  --plan-life-fill:   rgba(212, 83, 126, 0.26);
+  --plan-life-text:   #F2A4BC;
+
+  --plan-rest-fill:   rgba(255, 255, 255, 0.06);
+  --plan-rest-text:   #B5B4AE;
+
+  --plan-lecture-fill: rgba(74, 111, 165, 0.30);
+  --plan-lecture-text: #A6C3EE;
+}
+
+/* Liquid-glass calendar event. Each block adopts the category fill
+   underneath the same blur+gloss treatment as .lg-task. */
+.plan-event {
+  position: absolute;
+  border-radius: 8px;
+  padding: 5px 8px;
+  font-size: 11px;
+  line-height: 1.25;
+  overflow: hidden;
+  cursor: pointer;
+  backdrop-filter: blur(14px) saturate(1.6);
+  -webkit-backdrop-filter: blur(14px) saturate(1.6);
+  border: 1px solid rgba(255, 255, 255, 0.55);
+  box-shadow:
+    0 1px 0 rgba(255, 255, 255, 0.85) inset,
+    0 0 0 0.5px rgba(0, 0, 0, 0.05),
+    0 2px 6px rgba(0, 0, 0, 0.05);
+  transition:
+    filter 150ms ease,
+    box-shadow 150ms ease,
+    transform 80ms ease;
+}
+.plan-event:hover {
+  filter: brightness(1.04);
+  box-shadow:
+    0 1px 0 rgba(255, 255, 255, 0.95) inset,
+    0 0 0 0.5px rgba(0, 0, 0, 0.07),
+    0 6px 18px rgba(0, 0, 0, 0.10);
+}
+.dark .plan-event {
+  border: 1px solid rgba(255, 255, 255, 0.10);
+  box-shadow:
+    0 1px 0 rgba(255, 255, 255, 0.08) inset,
+    0 0 0 0.5px rgba(255, 255, 255, 0.04),
+    0 2px 6px rgba(0, 0, 0, 0.35);
+}
+.dark .plan-event:hover {
+  filter: brightness(1.10);
+}
+.plan-event.is-now {
+  outline: 1.5px solid var(--plan-now-line);
+  outline-offset: 1px;
+}
+
+/* Event status indicators: tiny dot in the top-right corner. */
+.plan-event[data-status="completed"]::after,
+.plan-event[data-status="half"]::after,
+.plan-event[data-status="missed"]::after {
+  content: "";
+  position: absolute;
+  top: 5px;
+  right: 5px;
+  width: 7px;
+  height: 7px;
+  border-radius: 50%;
+  box-shadow: 0 0 0 1.5px rgba(255, 255, 255, 0.85);
+}
+.dark .plan-event[data-status="completed"]::after,
+.dark .plan-event[data-status="half"]::after,
+.dark .plan-event[data-status="missed"]::after {
+  box-shadow: 0 0 0 1.5px rgba(20, 20, 22, 0.85);
+}
+.plan-event[data-status="completed"]::after { background: var(--plan-completed); }
+.plan-event[data-status="half"]::after      { background: var(--plan-half); }
+.plan-event[data-status="missed"]::after    { background: var(--plan-missed); }
+.plan-event[data-status="missed"]   { opacity: 0.50; }
+.plan-event[data-status="missed"] .plan-event-title { text-decoration: line-through; }
+.plan-event[data-status="half"]     { opacity: 0.85; }
+
+/* Live "now" line on today's column. */
+.plan-now-line {
+  position: absolute;
+  left: 0; right: 0;
+  height: 0;
+  border-top: 1.5px solid var(--plan-now-line);
+  z-index: 5;
+  pointer-events: none;
+}
+.plan-now-line::before {
+  content: "";
+  position: absolute;
+  left: -5px; top: -5px;
+  width: 10px; height: 10px;
+  background: var(--plan-now-line);
+  border-radius: 50%;
+  box-shadow: 0 0 0 2px rgba(204, 51, 68, 0.18);
+}
+
 /* ─── Chart palette ───────────────────────────────────────────────────
    Heatmap intensities (5 steps zero→4) and throughput line colors.
    Light/dark variants applied via the .dark variant on a parent. */

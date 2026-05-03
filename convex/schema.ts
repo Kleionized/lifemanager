@@ -112,4 +112,103 @@ export default defineSchema({
     description: v.string(),
     createdAt: v.number(),
   }).index("by_user_created", ["userId", "createdAt"]),
+
+  // ─────────── Plans ───────────
+  // Term-style plans: a finite-week run with phase shifts, exam weeks,
+  // energy-aware day templates, and per-block tracking. Parallel to the
+  // task/project/goal system; doesn't replace it.
+
+  // One row per plan. `goalLinks` maps category-id → goal-id so a plan's
+  // "finals" / "lnat" / "fitness" buckets can reference real goals.
+  plans: defineTable({
+    userId: v.id("users"),
+    name: v.string(),
+    startDate: v.string(), // ISO Monday of week 1
+    weekCount: v.number(),
+    phaseShiftWeek: v.optional(v.number()), // week N+ flips phase
+    examWeek: v.optional(v.number()), // week N is exam week (red)
+    phaseOverride: v.optional(v.string()), // "auto" | "essay" | "revision"
+    goalLinks: v.optional(v.any()), // { [categoryId]: goalId }
+    active: v.boolean(),
+    createdAt: v.number(),
+  }).index("by_user", ["userId"]),
+
+  // Editable per-(energy, phase) schedule template. Blocks is the ordered
+  // list of {s,e,title,category,duration} segments rendered on the
+  // calendar. `phase` is "" for energies that don't split by phase
+  // (low/moderate). High-energy schedules typically have two rows: one
+  // with phase="essay", one with phase="revision".
+  plan_schedules: defineTable({
+    userId: v.id("users"),
+    planId: v.id("plans"),
+    energy: v.string(), // "high" | "low" | "moderate"
+    phase: v.string(), // "essay" | "revision" | ""
+    blocks: v.array(
+      v.object({
+        s: v.string(),
+        e: v.string(),
+        t: v.string(),
+        c: v.string(),
+        d: v.string(),
+      })
+    ),
+  })
+    .index("by_plan", ["planId"])
+    .index("by_plan_lookup", ["planId", "energy", "phase"]),
+
+  // Recurring weekly fixtures (lectures / tutorials). dow is 0=Sun..6=Sat.
+  plan_lectures: defineTable({
+    userId: v.id("users"),
+    planId: v.id("plans"),
+    dow: v.number(),
+    blocks: v.array(
+      v.object({
+        s: v.string(),
+        e: v.string(),
+        t: v.string(),
+        c: v.string(),
+        d: v.string(),
+      })
+    ),
+  })
+    .index("by_plan", ["planId"])
+    .index("by_plan_dow", ["planId", "dow"]),
+
+  // Per-date energy choice + per-date phase override. One row per day the
+  // user has actually answered the energy picker for.
+  plan_days: defineTable({
+    userId: v.id("users"),
+    planId: v.id("plans"),
+    date: v.string(), // ISO YYYY-MM-DD
+    energy: v.string(), // "high" | "low" | "moderate" | "sick"
+    phaseOverride: v.optional(v.string()), // "essay" | "revision" | undefined
+  })
+    .index("by_plan", ["planId"])
+    .index("by_plan_date", ["planId", "date"]),
+
+  // Per-block completion status. blockKey = `${s}_${e}_${category}` so it
+  // survives schedule edits in the same block-window. status one of
+  // "completed" | "half" | "missed".
+  plan_tracking: defineTable({
+    userId: v.id("users"),
+    planId: v.id("plans"),
+    date: v.string(),
+    blockKey: v.string(),
+    blockTitle: v.string(), // denormalized so stats don't need a schedule join
+    category: v.string(),
+    status: v.string(),
+  })
+    .index("by_plan", ["planId"])
+    .index("by_plan_date", ["planId", "date"])
+    .index("by_plan_date_block", ["planId", "date", "blockKey"]),
+
+  // If/then decision rules. Editable, ordered.
+  plan_rules: defineTable({
+    userId: v.id("users"),
+    planId: v.id("plans"),
+    ifText: v.string(),
+    thenText: v.string(),
+    order: v.number(),
+  })
+    .index("by_plan", ["planId"]),
 });

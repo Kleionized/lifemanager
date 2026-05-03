@@ -379,6 +379,15 @@ export function useDataLayer() {
   const mDeleteHabit = useMutation(api.habits.remove);
   const mToggleHabitVirtual = useMutation(api.habitCompletions.toggleVirtual);
 
+  // Plans
+  const plansList = useQuery(api.plans.list);
+  const mEnsureTrinitySeed = useMutation(api.plans.ensureTrinitySeed);
+  const activePlan = (plansList || []).find((p) => p.active) || (plansList || [])[0] || null;
+  const planBundle = useQuery(
+    api.plans.getBundle,
+    activePlan ? { planId: activePlan._id } : "skip"
+  );
+
   // Migration
   const mImportV3 = useMutation(api.migration.importV3);
 
@@ -730,6 +739,11 @@ export function useDataLayer() {
     removeHabitCompletion,
     toggleHabitVirtual,
     setTaskHabitTag,
+    // plans
+    plansList: plansList || null,
+    activePlan,
+    planBundle: planBundle || null,
+    ensureTrinitySeed: () => mEnsureTrinitySeed({}),
     // migration
     importV3: mImportV3,
     // undo
