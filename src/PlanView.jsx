@@ -151,31 +151,34 @@ function eventsForDate(bundle, date) {
   const dow = date.getDay();
   const dayRow = bundle.days.find((d) => d.date === dateIso);
   const energy = dayRow?.energy || defaultEnergyFor(bundle.plan, date);
-  if (NO_BLOCKS_ENERGIES.has(energy)) return { energy, dateIso, events: [] };
 
-  const phase = effectivePhaseFor(bundle.plan, date);
-  const sched = scheduleFor(bundle.schedules, energy, phase);
   const events = [];
-  if (sched) {
-    for (const b of sched.blocks) {
-      events.push({
-        ...b,
-        startMin: toMin(b.s),
-        endMin: toMin(b.e),
-      });
-    }
-  }
-  // Lectures only attend high/low days.
-  if (energy === "high" || energy === "low") {
-    const lec = bundle.lectures.find((l) => l.dow === dow);
-    if (lec) {
-      for (const b of lec.blocks) {
+  // Schedule template blocks — only when this energy level has a
+  // schedule. Sick / free skip the schedule.
+  if (!NO_BLOCKS_ENERGIES.has(energy)) {
+    const phase = effectivePhaseFor(bundle.plan, date);
+    const sched = scheduleFor(bundle.schedules, energy, phase);
+    if (sched) {
+      for (const b of sched.blocks) {
         events.push({
           ...b,
           startMin: toMin(b.s),
           endMin: toMin(b.e),
         });
       }
+    }
+  }
+  // Lectures and tutorials are fixed commitments tied to a specific
+  // date. They show regardless of energy level — even on free or sick
+  // days, the lecture still happens at its scheduled time.
+  const lec = bundle.lectures.find((l) => l.dow === dow);
+  if (lec) {
+    for (const b of lec.blocks) {
+      events.push({
+        ...b,
+        startMin: toMin(b.s),
+        endMin: toMin(b.e),
+      });
     }
   }
   // Lectures are fixed commitments. Instead of dropping a 90-minute
@@ -468,9 +471,9 @@ function DayColumn({
           backgroundRepeat: "repeat-y",
         }}
       >
-        {NO_BLOCKS_ENERGIES.has(energy) ? (
+        {NO_BLOCKS_ENERGIES.has(energy) && events.length === 0 ? (
           <div className="absolute inset-0 flex items-center justify-center px-3 text-center text-xs text-neutral-500 dark:text-neutral-400">
-            {energy === "free" ? "Free day. No schedule." : "Rest day. No schedule."}
+            {energy === "free" ? "Free day." : "Rest day."}
           </div>
         ) : (
           events.map((ev) => {
@@ -926,7 +929,7 @@ function TodayView({ bundle, goals, todayDate, nowMin, openTracking, mut }) {
         />
       </div>
 
-      {NO_BLOCKS_ENERGIES.has(energy) ? (
+      {NO_BLOCKS_ENERGIES.has(energy) && events.length === 0 ? (
         <div className="border border-black/10 dark:border-white/10 rounded-md p-12 text-center">
           <div className="inline-block px-3 py-1.5 rounded-md text-sm bg-neutral-200/60 dark:bg-neutral-800/60 text-neutral-700 dark:text-neutral-300">
             No schedule today.
