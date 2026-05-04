@@ -107,8 +107,7 @@ const SEED_SCHEDULES: { energy: string; phase: string; blocks: any[] }[] = [
 
 const SEED_LECTURES: Record<number, any[]> = {
   2: [
-    { s: "09:40", e: "10:00", t: "Walk to lecture", c: "lecture", d: "20m" },
-    { s: "10:00", e: "11:00", t: "Stats Lecture", c: "lecture", d: "60m" },
+    { s: "10:40", e: "11:00", t: "Walk to lecture", c: "lecture", d: "20m" },
     { s: "11:00", e: "12:00", t: "Psych Lecture", c: "lecture", d: "60m" },
     { s: "12:00", e: "12:20", t: "Walk back", c: "lecture", d: "20m" },
   ],

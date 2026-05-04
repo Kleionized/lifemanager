@@ -2709,10 +2709,13 @@ export default function PlanView({ planSubView, setPlanSubView, bundle, goals })
       )
     );
     // Wednesday's lecture row used to include a morning Psych Lecture
-    // that didn't actually exist on the user's real schedule.
+    // that didn't actually exist on the user's real schedule. Tuesday
+    // similarly had a phantom Stats Lecture — only Psych meets on Tue.
     const wedRow = bundle.lectures.find((l) => l.dow === 3);
+    const tueRow = bundle.lectures.find((l) => l.dow === 2);
     const staleLectures =
-      wedRow?.blocks?.some((b) => b.t === "Psych Lecture") ?? false;
+      (wedRow?.blocks?.some((b) => b.t === "Psych Lecture") ?? false) ||
+      (tueRow?.blocks?.some((b) => b.t === "Stats Lecture") ?? false);
     if (staleSchedule || staleLectures) {
       autoResetRef.current = true;
       mut.resetDefaults({ planId: bundle.plan._id });
