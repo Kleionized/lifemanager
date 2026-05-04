@@ -5681,11 +5681,7 @@ function TaskRow({
   // stacking. Tasks with visible steps get a balanced margin both
   // above and below so they read as a card with breathing room.
   const liSpacing =
-    !compact && depth === 0
-      ? showsChildren
-        ? "mt-5 mb-5"
-        : "mb-2"
-      : "";
+    !compact && depth === 0 ? (showsChildren ? "mb-5" : "mb-2") : "";
   const showChevron = !!toggleCollapsed && hasChildren;
   const reserveChevron = !!toggleCollapsed && !compact;
 
@@ -5712,7 +5708,7 @@ function TaskRow({
     <li
       ref={liRef}
       className={[
-        "transition-[margin-top,margin-bottom] duration-200 ease-out",
+        "transition-[margin-bottom] duration-200 ease-out",
         liSpacing,
       ].join(" ")}
       style={rowStyle}
