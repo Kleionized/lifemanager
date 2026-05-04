@@ -182,6 +182,30 @@ export default defineSchema({
     date: v.string(), // ISO YYYY-MM-DD
     energy: v.string(), // "high" | "low" | "moderate" | "sick"
     phaseOverride: v.optional(v.string()), // "essay" | "revision" | undefined
+    // Per-date overrides for one-off edits. When present, these
+    // arrays REPLACE the template/lecture blocks for that date alone.
+    scheduleOverride: v.optional(
+      v.array(
+        v.object({
+          s: v.string(),
+          e: v.string(),
+          t: v.string(),
+          c: v.string(),
+          d: v.string(),
+        })
+      )
+    ),
+    lectureOverride: v.optional(
+      v.array(
+        v.object({
+          s: v.string(),
+          e: v.string(),
+          t: v.string(),
+          c: v.string(),
+          d: v.string(),
+        })
+      )
+    ),
   })
     .index("by_plan", ["planId"])
     .index("by_plan_date", ["planId", "date"]),

@@ -465,6 +465,69 @@ export const setPhaseOverride = mutation({
   },
 });
 
+// Per-date override for the schedule template — used when the user
+// chose "edit only today" instead of "edit the whole schedule". The
+// blocks array fully replaces the template for that one date.
+export const setDayScheduleOverride = mutation({
+  args: {
+    planId: v.id("plans"),
+    date: v.string(),
+    blocks: v.array(BLOCK_VALIDATOR),
+  },
+  handler: async (ctx, { planId, date, blocks }) => {
+    const userId = await requireUserId(ctx);
+    await getOwned(ctx, planId, userId);
+    const existing = await ctx.db
+      .query("plan_days")
+      .withIndex("by_plan_date", (q) =>
+        q.eq("planId", planId).eq("date", date)
+      )
+      .unique();
+    if (existing) {
+      await ctx.db.patch(existing._id, { scheduleOverride: blocks });
+      return existing._id;
+    }
+    return await ctx.db.insert("plan_days", {
+      userId,
+      planId,
+      date,
+      energy: "high",
+      scheduleOverride: blocks,
+    });
+  },
+});
+
+// Same idea for recurring lectures — used when a user wants to skip,
+// move, or rename a lecture for one specific date.
+export const setDayLectureOverride = mutation({
+  args: {
+    planId: v.id("plans"),
+    date: v.string(),
+    blocks: v.array(BLOCK_VALIDATOR),
+  },
+  handler: async (ctx, { planId, date, blocks }) => {
+    const userId = await requireUserId(ctx);
+    await getOwned(ctx, planId, userId);
+    const existing = await ctx.db
+      .query("plan_days")
+      .withIndex("by_plan_date", (q) =>
+        q.eq("planId", planId).eq("date", date)
+      )
+      .unique();
+    if (existing) {
+      await ctx.db.patch(existing._id, { lectureOverride: blocks });
+      return existing._id;
+    }
+    return await ctx.db.insert("plan_days", {
+      userId,
+      planId,
+      date,
+      energy: "high",
+      lectureOverride: blocks,
+    });
+  },
+});
+
 // ─────────────── Tracking ───────────────
 
 export const setTracking = mutation({

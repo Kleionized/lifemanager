@@ -153,10 +153,27 @@ function eventsForDate(bundle, date) {
   const energy = dayRow?.energy || defaultEnergyFor(bundle.plan, date);
 
   const events = [];
-  // Schedule template blocks — only when this energy level has a
-  // schedule. Sick / free skip the schedule.
-  if (!NO_BLOCKS_ENERGIES.has(energy)) {
-    const phase = effectivePhaseFor(bundle.plan, date);
+  // Schedule blocks — per-date override wins, otherwise the template
+  // for the day's (energy, phase). Sick / free with no override skip
+  // the schedule.
+  const phase = effectivePhaseFor(bundle.plan, date);
+  if (dayRow?.scheduleOverride) {
+    for (const b of dayRow.scheduleOverride) {
+      events.push({
+        ...b,
+        startMin: toMin(b.s),
+        endMin: toMin(b.e),
+        _source: {
+          kind: "scheduleOverride",
+          date: dateIso,
+          origS: b.s,
+          origE: b.e,
+          origT: b.t,
+          origC: b.c,
+        },
+      });
+    }
+  } else if (!NO_BLOCKS_ENERGIES.has(energy)) {
     const sched = scheduleFor(bundle.schedules, energy, phase);
     if (sched) {
       for (const b of sched.blocks) {
@@ -180,25 +197,43 @@ function eventsForDate(bundle, date) {
       }
     }
   }
-  // Lectures and tutorials are fixed commitments tied to a specific
-  // date. They show regardless of energy level — even on free or sick
-  // days, the lecture still happens at its scheduled time.
-  const lec = bundle.lectures.find((l) => l.dow === dow);
-  if (lec) {
-    for (const b of lec.blocks) {
+  // Lectures — per-date override wins, otherwise the recurring row
+  // for this dow. Both apply regardless of energy: lectures and
+  // tutorials are fixed commitments tied to a specific date.
+  if (dayRow?.lectureOverride) {
+    for (const b of dayRow.lectureOverride) {
       events.push({
         ...b,
         startMin: toMin(b.s),
         endMin: toMin(b.e),
         _source: {
-          kind: "lecture",
-          dow,
+          kind: "lectureOverride",
+          date: dateIso,
           origS: b.s,
           origE: b.e,
           origT: b.t,
           origC: b.c,
         },
       });
+    }
+  } else {
+    const lec = bundle.lectures.find((l) => l.dow === dow);
+    if (lec) {
+      for (const b of lec.blocks) {
+        events.push({
+          ...b,
+          startMin: toMin(b.s),
+          endMin: toMin(b.e),
+          _source: {
+            kind: "lecture",
+            dow,
+            origS: b.s,
+            origE: b.e,
+            origT: b.t,
+            origC: b.c,
+          },
+        });
+      }
     }
   }
   // Lectures are fixed commitments. Instead of dropping a 90-minute
@@ -825,12 +860,18 @@ function TrackingModal({
   onSet,
   onEditSave,
   onEditDelete,
+  sessionScope,
+  setSessionScope,
 }) {
   const [mode, setMode] = useState("track");
   const [title, setTitle] = useState("");
   const [start, setStart] = useState("");
   const [end, setEnd] = useState("");
   const [category, setCategory] = useState("");
+  // Scope = "today" | "schedule". null until user picks (or until the
+  // session memory provides one).
+  const [scopeChoice, setScopeChoice] = useState(null);
+  const [rememberScope, setRememberScope] = useState(false);
 
   useEffect(() => {
     if (ev) {
@@ -840,6 +881,8 @@ function TrackingModal({
       setCategory(ev.c || "");
     }
     setMode("track");
+    setScopeChoice(null);
+    setRememberScope(false);
   }, [ev]);
 
   if (!open || !ev) return null;
@@ -987,13 +1030,77 @@ function TrackingModal({
               </Field>
             </div>
 
+            {sessionScope === null && (
+              <div className="lg-task rounded-md p-3 mt-4">
+                <div className="text-xs font-medium text-neutral-700 dark:text-neutral-200 mb-2">
+                  Apply this change to:
+                </div>
+                <label className="flex items-center gap-2 cursor-pointer text-sm py-1">
+                  <input
+                    type="radio"
+                    name="scope"
+                    value="today"
+                    checked={scopeChoice === "today"}
+                    onChange={() => setScopeChoice("today")}
+                  />
+                  <span>
+                    Only today
+                    <span className="text-neutral-500 dark:text-neutral-400 text-[11px] ml-1.5">
+                      ({dateIso})
+                    </span>
+                  </span>
+                </label>
+                <label className="flex items-center gap-2 cursor-pointer text-sm py-1">
+                  <input
+                    type="radio"
+                    name="scope"
+                    value="schedule"
+                    checked={scopeChoice === "schedule"}
+                    onChange={() => setScopeChoice("schedule")}
+                  />
+                  <span>
+                    The whole{" "}
+                    {ev._source.kind === "lecture" ||
+                    ev._source.kind === "lectureOverride"
+                      ? "weekly lecture"
+                      : "schedule template"}
+                  </span>
+                </label>
+                <label className="flex items-center gap-1.5 mt-2 text-[11px] text-neutral-500 dark:text-neutral-400 cursor-pointer">
+                  <input
+                    type="checkbox"
+                    checked={rememberScope}
+                    onChange={(e) => setRememberScope(e.target.checked)}
+                  />
+                  Don't ask again this session
+                </label>
+              </div>
+            )}
+            {sessionScope !== null && (
+              <p className="text-[11px] text-neutral-500 dark:text-neutral-400 mt-3">
+                Applying to{" "}
+                <b>
+                  {sessionScope === "today"
+                    ? "today only"
+                    : "the whole schedule"}
+                </b>
+                {" "}(remembered for this session).
+              </p>
+            )}
+
             <div className="mt-5 flex justify-between gap-2">
               <button
                 className="px-3 py-1.5 rounded-md text-xs text-rose-600 dark:text-rose-400 hover:bg-rose-500/10"
                 onClick={() => {
-                  onEditDelete(ev);
+                  const scope = sessionScope ?? scopeChoice;
+                  if (!scope) return;
+                  if (rememberScope && sessionScope === null) {
+                    setSessionScope(scope);
+                  }
+                  onEditDelete(ev, scope);
                   onClose();
                 }}
+                disabled={sessionScope === null && !scopeChoice}
               >
                 Delete block
               </button>
@@ -1010,17 +1117,27 @@ function TrackingModal({
                     !title.trim() ||
                     !/^\d{2}:\d{2}$/.test(start) ||
                     !/^\d{2}:\d{2}$/.test(end) ||
-                    toMin(start) >= toMin(end)
+                    toMin(start) >= toMin(end) ||
+                    (sessionScope === null && !scopeChoice)
                   }
                   onClick={() => {
+                    const scope = sessionScope ?? scopeChoice;
+                    if (!scope) return;
+                    if (rememberScope && sessionScope === null) {
+                      setSessionScope(scope);
+                    }
                     const dur = toMin(end) - toMin(start);
-                    onEditSave(ev, {
-                      s: start,
-                      e: end,
-                      t: title.trim(),
-                      c: category,
-                      d: `${dur}m`,
-                    });
+                    onEditSave(
+                      ev,
+                      {
+                        s: start,
+                        e: end,
+                        t: title.trim(),
+                        c: category,
+                        d: `${dur}m`,
+                      },
+                      scope
+                    );
                     onClose();
                   }}
                 >
@@ -2396,6 +2513,10 @@ export default function PlanView({ planSubView, setPlanSubView, bundle, goals })
   const mUpdateRule = useMutation(api.plans.updateRule);
   const mDeleteRule = useMutation(api.plans.deleteRule);
   const mResetDefaults = useMutation(api.plans.resetTrinityDefaults);
+  const mSetDayScheduleOverride = useMutation(
+    api.plans.setDayScheduleOverride
+  );
+  const mSetDayLectureOverride = useMutation(api.plans.setDayLectureOverride);
 
   const mut = useMemo(
     () => ({
@@ -2409,10 +2530,150 @@ export default function PlanView({ planSubView, setPlanSubView, bundle, goals })
       updateRule: (a) => mUpdateRule(a),
       deleteRule: (a) => mDeleteRule(a),
       resetDefaults: (a) => mResetDefaults(a),
+      setDayScheduleOverride: (a) => mSetDayScheduleOverride(a),
+      setDayLectureOverride: (a) => mSetDayLectureOverride(a),
     }),
     // eslint-disable-next-line react-hooks/exhaustive-deps
     []
   );
+
+  // Edit-scope memory for the session. null = ask each time;
+  // "today" or "schedule" = silently apply that scope. Resets when
+  // the component unmounts (i.e. user leaves the Plan page).
+  const [sessionScope, setSessionScope] = useState(null);
+  const trackingModalDateRef = useRef(null);
+
+  // applyEdit handles both Save (edits) and Delete (edits=null).
+  // scope = "today" → write to plan_days override array, leaving the
+  //                   template untouched
+  // scope = "schedule" → mutate the schedule template / lecture row,
+  //                      affecting every day that uses it
+  const applyEdit = (ev, edits, scope, kind) => {
+    const src = ev._source;
+    if (!src || !scope) return;
+    const isLectureSrc = src.kind === "lecture" || src.kind === "lectureOverride";
+
+    if (scope === "today") {
+      const dateIso = trackingModalDateRef.current;
+      if (!dateIso) return;
+      const dayRow = bundle.days.find((d) => d.date === dateIso);
+
+      if (isLectureSrc) {
+        // Snapshot current lecture blocks for the date.
+        let currentBlocks;
+        if (dayRow?.lectureOverride) {
+          currentBlocks = dayRow.lectureOverride;
+        } else {
+          const lec = bundle.lectures.find(
+            (l) => l.dow === new Date(dateIso + "T00:00:00").getDay()
+          );
+          currentBlocks = lec?.blocks ? [...lec.blocks] : [];
+        }
+        const next = currentBlocks
+          .map((b) => {
+            const hit =
+              b.s === src.origS &&
+              b.e === src.origE &&
+              b.t === src.origT &&
+              b.c === src.origC;
+            if (!hit) return b;
+            return kind === "delete" ? null : { ...b, ...edits };
+          })
+          .filter(Boolean);
+        mut.setDayLectureOverride({
+          planId: bundle.plan._id,
+          date: dateIso,
+          blocks: next,
+        });
+      } else {
+        let currentBlocks;
+        if (dayRow?.scheduleOverride) {
+          currentBlocks = dayRow.scheduleOverride;
+        } else {
+          const phase = effectivePhaseFor(
+            bundle.plan,
+            new Date(dateIso + "T00:00:00")
+          );
+          const energy =
+            dayRow?.energy ||
+            defaultEnergyFor(bundle.plan, new Date(dateIso + "T00:00:00"));
+          const sched = scheduleFor(bundle.schedules, energy, phase);
+          currentBlocks = sched?.blocks ? [...sched.blocks] : [];
+        }
+        const next = currentBlocks
+          .map((b) => {
+            const hit =
+              b.s === src.origS &&
+              b.e === src.origE &&
+              b.t === src.origT &&
+              b.c === src.origC;
+            if (!hit) return b;
+            return kind === "delete" ? null : { ...b, ...edits };
+          })
+          .filter(Boolean);
+        mut.setDayScheduleOverride({
+          planId: bundle.plan._id,
+          date: dateIso,
+          blocks: next,
+        });
+      }
+      return;
+    }
+
+    // scope === "schedule" — write to the template / lecture row.
+    if (isLectureSrc) {
+      const dow =
+        src.kind === "lecture"
+          ? src.dow
+          : new Date(src.date + "T00:00:00").getDay();
+      const lec = bundle.lectures.find((l) => l.dow === dow);
+      if (!lec) return;
+      const next = lec.blocks
+        .map((b) => {
+          const hit =
+            b.s === src.origS &&
+            b.e === src.origE &&
+            b.t === src.origT &&
+            b.c === src.origC;
+          if (!hit) return b;
+          return kind === "delete" ? null : { ...b, ...edits };
+        })
+        .filter(Boolean);
+      mut.upsertLectures({
+        planId: bundle.plan._id,
+        dow,
+        blocks: next,
+      });
+    } else {
+      // For scheduleOverride sources, we don't have (energy, phase)
+      // baked in — fall back to today's. In practice this matches
+      // because the user is editing a block that's currently visible.
+      const energy = src.energy;
+      const phase = src.phase;
+      if (energy === undefined || phase === undefined) return;
+      const sched = bundle.schedules.find(
+        (s) => s.energy === energy && s.phase === phase
+      );
+      if (!sched) return;
+      const next = sched.blocks
+        .map((b) => {
+          const hit =
+            b.s === src.origS &&
+            b.e === src.origE &&
+            b.t === src.origT &&
+            b.c === src.origC;
+          if (!hit) return b;
+          return kind === "delete" ? null : { ...b, ...edits };
+        })
+        .filter(Boolean);
+      mut.upsertSchedule({
+        planId: bundle.plan._id,
+        energy,
+        phase,
+        blocks: next,
+      });
+    }
+  };
 
   // Re-render tick — drives the now-line and now-card every minute.
   const [tick, setTick] = useState(0);
@@ -2485,6 +2746,7 @@ export default function PlanView({ planSubView, setPlanSubView, bundle, goals })
   );
   const openTracking = (ev, dateIso) => {
     const cur = trackingByDate.get(dateIso)?.get(blockKey(ev));
+    trackingModalDateRef.current = dateIso;
     setTrackingModal({
       ev,
       dateIso,
@@ -2559,88 +2821,10 @@ export default function PlanView({ planSubView, setPlanSubView, bundle, goals })
           });
           setTrackingModal(null);
         }}
-        onEditSave={(ev, edits) => {
-          const src = ev._source;
-          if (!src) return;
-          if (src.kind === "lecture") {
-            const lec = bundle.lectures.find((l) => l.dow === src.dow);
-            if (!lec) return;
-            const newBlocks = lec.blocks.map((b) =>
-              b.s === src.origS &&
-              b.e === src.origE &&
-              b.t === src.origT &&
-              b.c === src.origC
-                ? { ...b, ...edits }
-                : b
-            );
-            mut.upsertLectures({
-              planId: bundle.plan._id,
-              dow: src.dow,
-              blocks: newBlocks,
-            });
-          } else {
-            const sched = bundle.schedules.find(
-              (s) => s.energy === src.energy && s.phase === src.phase
-            );
-            if (!sched) return;
-            const newBlocks = sched.blocks.map((b) =>
-              b.s === src.origS &&
-              b.e === src.origE &&
-              b.t === src.origT &&
-              b.c === src.origC
-                ? { ...b, ...edits }
-                : b
-            );
-            mut.upsertSchedule({
-              planId: bundle.plan._id,
-              energy: src.energy,
-              phase: src.phase,
-              blocks: newBlocks,
-            });
-          }
-        }}
-        onEditDelete={(ev) => {
-          const src = ev._source;
-          if (!src) return;
-          if (src.kind === "lecture") {
-            const lec = bundle.lectures.find((l) => l.dow === src.dow);
-            if (!lec) return;
-            const newBlocks = lec.blocks.filter(
-              (b) =>
-                !(
-                  b.s === src.origS &&
-                  b.e === src.origE &&
-                  b.t === src.origT &&
-                  b.c === src.origC
-                )
-            );
-            mut.upsertLectures({
-              planId: bundle.plan._id,
-              dow: src.dow,
-              blocks: newBlocks,
-            });
-          } else {
-            const sched = bundle.schedules.find(
-              (s) => s.energy === src.energy && s.phase === src.phase
-            );
-            if (!sched) return;
-            const newBlocks = sched.blocks.filter(
-              (b) =>
-                !(
-                  b.s === src.origS &&
-                  b.e === src.origE &&
-                  b.t === src.origT &&
-                  b.c === src.origC
-                )
-            );
-            mut.upsertSchedule({
-              planId: bundle.plan._id,
-              energy: src.energy,
-              phase: src.phase,
-              blocks: newBlocks,
-            });
-          }
-        }}
+        sessionScope={sessionScope}
+        setSessionScope={setSessionScope}
+        onEditSave={(ev, edits, scope) => applyEdit(ev, edits, scope, "save")}
+        onEditDelete={(ev, scope) => applyEdit(ev, null, scope, "delete")}
       />
     </div>
   );
