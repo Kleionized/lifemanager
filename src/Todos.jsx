@@ -5690,24 +5690,22 @@ function TaskRow({
   const showChevron = !!toggleCollapsed && hasChildren;
   const reserveChevron = !!toggleCollapsed && !compact;
 
-  // Apply transform/transition styles ONLY when the row is actually
-  // moving (translated or lifted). At rest, leave inline style empty
-  // so the browser doesn't promote every row to its own GPU
-  // compositor layer — that promotion combined with backdrop-filter
-  // was causing the brief shrink-and-expand flash across every row
-  // whenever a drag began.
+  // Plain translateY (no translate3d, no will-change) so the browser
+  // doesn't aggressively promote/demote compositor layers on each
+  // drag cycle — the layer churn was producing a brief residual
+  // flash even after backdrop-filter was suspended. Position is
+  // always relative (via .relative className below) so toggling
+  // zIndex on lift doesn't introduce a layout property change.
   const isMoving = translateY !== 0 || isLifting;
   const rowStyle = {};
   if (isMoving) {
-    rowStyle.transform = `translate3d(0,${translateY}px,0)${isLifting ? " scale(1.015)" : ""}`;
+    rowStyle.transform = `translateY(${translateY}px)${isLifting ? " scale(1.015)" : ""}`;
     rowStyle.transition = isLifting
       ? "none"
       : "transform 220ms cubic-bezier(0.2, 0.7, 0.2, 1)";
-    rowStyle.willChange = "transform";
   }
   if (isLifting) {
     rowStyle.zIndex = 50;
-    rowStyle.position = "relative";
     rowStyle.boxShadow = "0 14px 32px rgba(0,0,0,0.18)";
     rowStyle.userSelect = "none";
   }
@@ -5718,7 +5716,7 @@ function TaskRow({
     <li
       ref={liRef}
       className={[
-        "transition-[margin-bottom] duration-200 ease-out",
+        "relative transition-[margin-bottom] duration-200 ease-out",
         liSpacing,
         onRowMouseDown
           ? isLifting
@@ -5726,7 +5724,7 @@ function TaskRow({
             : "cursor-grab"
           : "",
       ].join(" ")}
-      style={isMoving || isLifting ? rowStyle : undefined}
+      style={isMoving ? rowStyle : undefined}
       onMouseDown={onRowMouseDown}
     >
       <div
