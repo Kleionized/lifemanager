@@ -998,12 +998,11 @@ export default function Todos() {
 
   useEffect(() => {
     if (sameView(view, displayView)) return;
-    setFading(true);
-    const t = setTimeout(() => {
-      setDisplayView(view);
-      setFading(false);
-    }, 180);
-    return () => clearTimeout(t);
+    // Swap views instantly. The 180ms cross-fade was responsible for
+    // the perceived "flash" when navigating to Plan, which has more
+    // visually-distinct content than the task views.
+    setDisplayView(view);
+    setFading(false);
   }, [view, displayView]);
 
   // First-load: hydrate local UI state from the server `ui` row. The
@@ -1213,18 +1212,18 @@ export default function Todos() {
       if (view.type !== "daily") return;
       const tag = e.target.tagName;
       if (tag === "INPUT" || tag === "TEXTAREA") return;
-      const key = e.key.toLowerCase();
-      if (key === "h") {
+      const key = e.key;
+      if (key === "[") {
         e.preventDefault();
         const newId = await addAtDaily([]);
         if (newId) setEditingId(newId);
-      } else if (key === "j") {
+      } else if (key === "]") {
         const taskId = lastTaskIdRef.current;
         if (!taskId) return;
         e.preventDefault();
         const newId = await addAtDaily([taskId]);
         if (newId) setEditingId(newId);
-      } else if (key === "k") {
+      } else if (key === "\\") {
         const taskId = lastTaskIdRef.current;
         const stepId = lastStepIdRef.current;
         if (!taskId || !stepId) return;
@@ -5194,13 +5193,22 @@ function InlineTitle({
   const skipBlurRef = useRef(false);
 
   useEffect(() => {
-    if (editing) {
-      setDraft(title);
-      requestAnimationFrame(() => {
-        inputRef.current?.focus();
-        inputRef.current?.select();
-      });
-    }
+    if (!editing) return;
+    setDraft(title);
+    // Focus retries — the input may mount one frame after editingId
+    // changes (Convex query reactivity), and there are paths where
+    // the row remounts mid-flight. Try multiple times until focus
+    // actually lands.
+    const delays = [0, 30, 100, 250];
+    const timers = delays.map((delay) =>
+      setTimeout(() => {
+        if (document.activeElement !== inputRef.current) {
+          inputRef.current?.focus();
+          inputRef.current?.select();
+        }
+      }, delay)
+    );
+    return () => timers.forEach(clearTimeout);
   }, [editing, title]);
 
   const sizeClass = textClass || (compact ? "text-xs" : "text-sm");
@@ -5250,13 +5258,15 @@ function InlineTitle({
       className={[
         "flex-1 min-w-0 cursor-text truncate",
         sizeClass,
-        done
-          ? "line-through text-neutral-400 dark:text-neutral-500"
-          : tint,
+        !title
+          ? "italic text-neutral-400 dark:text-neutral-500"
+          : done
+            ? "line-through text-neutral-400 dark:text-neutral-500"
+            : tint,
       ].join(" ")}
-      title={title}
+      title={title || "Untitled"}
     >
-      {title}
+      {title || "Untitled — click to edit"}
     </span>
   );
 }
@@ -5426,22 +5436,32 @@ function ScheduleTaskButton({ onSchedule, iconClass }) {
   );
 }
 
-// Renders an array of task items as draggable rows. Uses a "lift &
-// shift" UX: the dragged row gets translated to follow the cursor in
-// real time, while the other rows in the same group transition to
-// make room. On release, the underlying onMoveTo mutation runs. The
-// 4-pixel movement threshold separates click-to-edit from drag.
+// Drag-and-drop reordering with smooth lift-and-shift. Three phases:
+//
+//   active   — cursor is moving; dragged row tracks deltaY with no
+//              transition, sibling rows use a 220ms transition to
+//              shift into place.
+//   pre-settle — cursor released, optimistic mutation has reordered
+//              the items array. The dragged row's transform is set
+//              to a FLIP-invert offset so its visible position stays
+//              put while the DOM reshuffles. Transitions disabled.
+//   settling — next frame: transitions re-enabled, dragged row's
+//              transform set to 0. The browser animates it from the
+//              FLIP offset to 0, which is the "smooth settle" the
+//              user perceives.
+//
+// 4-pixel movement threshold separates click-to-edit from drag, and
+// the trailing click is swallowed so the title doesn't auto-edit.
 function DraggableTaskList({ items, renderItem }) {
   const [drag, setDrag] = useState(null);
-  // drag = {
-  //   itemId, fromIndex, targetIndex, deltaY, height
-  // }
+  // drag = null
+  //      | active:     { phase:"active", itemId, fromIndex, targetIndex, deltaY, height }
+  //      | pre-settle: { phase:"pre-settle", itemId, deltaY }
+  //      | settling:   { phase:"settling", itemId }
   const refs = useRef({});
 
   const startDrag = (e, item, fromIndex) => {
     if (e.button !== 0 || !item.onMoveTo) return;
-    // Don't drag from interactive children — let them handle their own
-    // events first (checkbox toggle, edit input, swatch button, etc.).
     if (
       e.target.closest(
         'input, textarea, button, [contenteditable], select'
@@ -5456,7 +5476,7 @@ function DraggableTaskList({ items, renderItem }) {
     let dragging = false;
     let didDrag = false;
     let lastTarget = fromIndex;
-    e.preventDefault();
+    let lastDeltaY = 0;
 
     const onMove = (me) => {
       const deltaY = me.clientY - startY;
@@ -5466,9 +5486,14 @@ function DraggableTaskList({ items, renderItem }) {
         didDrag = true;
         document.body.style.userSelect = "none";
         document.body.style.cursor = "grabbing";
+        // Drop the page selection that may have been started before
+        // we crossed the threshold.
+        try {
+          window.getSelection()?.removeAllRanges();
+        } catch {
+          // ignore
+        }
       }
-      // Hit-test the cursor against each sibling's midpoint so the
-      // target index updates as soon as the cursor crosses a midline.
       let targetIdx = fromIndex;
       for (let i = 0; i < items.length; i++) {
         if (i === fromIndex) continue;
@@ -5485,7 +5510,9 @@ function DraggableTaskList({ items, renderItem }) {
         }
       }
       lastTarget = targetIdx;
+      lastDeltaY = deltaY;
       setDrag({
+        phase: "active",
         itemId: item.id,
         fromIndex,
         targetIndex: targetIdx,
@@ -5499,17 +5526,39 @@ function DraggableTaskList({ items, renderItem }) {
       document.body.style.userSelect = "";
       document.body.style.cursor = "";
       if (didDrag) {
-        // Suppress the trailing click so it doesn't fire onStartEdit
-        // on the row's title.
         const swallow = (ce) => {
           ce.preventDefault();
           ce.stopPropagation();
         };
-        document.addEventListener("click", swallow, { capture: true, once: true });
+        document.addEventListener("click", swallow, {
+          capture: true,
+          once: true,
+        });
         setTimeout(() => {
           document.removeEventListener("click", swallow, true);
         }, 80);
-        if (lastTarget !== fromIndex) item.onMoveTo(lastTarget);
+        if (lastTarget !== fromIndex) {
+          // Phase 1: optimistic reorder + FLIP-invert transform so
+          // the dragged row visually stays put while the DOM moves.
+          // Transitions are off (lifting=true) so the browser snaps.
+          const positionOffset = (lastTarget - fromIndex) * rowHeight;
+          item.onMoveTo(lastTarget);
+          setDrag({
+            phase: "pre-settle",
+            itemId: item.id,
+            deltaY: lastDeltaY - positionOffset,
+          });
+          // Phase 2: next paint, drop the offset. Transitions are
+          // back on, so the browser animates from the FLIP offset
+          // to 0 — the actual smooth settle the user sees.
+          requestAnimationFrame(() => {
+            requestAnimationFrame(() => {
+              setDrag({ phase: "settling", itemId: item.id });
+              setTimeout(() => setDrag(null), 240);
+            });
+          });
+          return;
+        }
       }
       setDrag(null);
     };
@@ -5521,21 +5570,32 @@ function DraggableTaskList({ items, renderItem }) {
     let dy = 0;
     let lifting = false;
     if (drag) {
-      if (drag.itemId === item.id) {
-        dy = drag.deltaY;
+      if (drag.phase === "active") {
+        if (drag.itemId === item.id) {
+          dy = drag.deltaY;
+          lifting = true;
+        } else if (
+          drag.fromIndex < drag.targetIndex &&
+          idx > drag.fromIndex &&
+          idx <= drag.targetIndex
+        ) {
+          dy = -drag.height;
+        } else if (
+          drag.fromIndex > drag.targetIndex &&
+          idx >= drag.targetIndex &&
+          idx < drag.fromIndex
+        ) {
+          dy = drag.height;
+        }
+      } else if (drag.phase === "pre-settle") {
+        // Items were reordered. Disable transitions everywhere so
+        // the FLIP snaps; only the moved row needs an offset.
         lifting = true;
-      } else if (
-        drag.fromIndex < drag.targetIndex &&
-        idx > drag.fromIndex &&
-        idx <= drag.targetIndex
-      ) {
-        dy = -drag.height;
-      } else if (
-        drag.fromIndex > drag.targetIndex &&
-        idx >= drag.targetIndex &&
-        idx < drag.fromIndex
-      ) {
-        dy = drag.height;
+        if (drag.itemId === item.id) dy = drag.deltaY;
+      } else if (drag.phase === "settling") {
+        // Transitions back on, transforms all 0. The moved row
+        // animates from its previous (FLIP) offset to 0.
+        // Other rows already settled.
       }
     }
     return renderItem({

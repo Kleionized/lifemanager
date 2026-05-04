@@ -228,7 +228,40 @@ export function useDataLayer() {
     );
   });
   const mSetDailyHabitTag = useMutation(api.dailyTasks.setHabitTag);
-  const mReorderToDaily = useMutation(api.dailyTasks.reorderTo);
+  // Optimistic reorder so drag-and-drop drops feel instant — the local
+  // query reorders the moment the mutation is invoked instead of after
+  // the server round-trip. Same logic the server uses (slice the
+  // sibling group, splice the moved row in at targetIndex, recompute
+  // every row's order field).
+  const mReorderToDaily = useMutation(
+    api.dailyTasks.reorderTo
+  ).withOptimisticUpdate((local, { id, targetIndex }) => {
+    const cur = local.getQuery(api.dailyTasks.list);
+    if (cur === undefined) return;
+    const target = cur.find((t) => t._id === id);
+    if (!target) return;
+    const group = cur
+      .filter(
+        (t) => (t.parentId ?? undefined) === (target.parentId ?? undefined)
+      )
+      .sort((a, b) => a.order - b.order);
+    const fromIdx = group.findIndex((t) => t._id === id);
+    if (fromIdx === -1) return;
+    const clamped = Math.max(0, Math.min(group.length - 1, targetIndex));
+    if (fromIdx === clamped) return;
+    const reordered = [...group];
+    const [moved] = reordered.splice(fromIdx, 1);
+    reordered.splice(clamped, 0, moved);
+    const orderMap = new Map();
+    reordered.forEach((t, i) => orderMap.set(t._id, i));
+    local.setQuery(
+      api.dailyTasks.list,
+      {},
+      cur.map((t) =>
+        orderMap.has(t._id) ? { ...t, order: orderMap.get(t._id) } : t
+      )
+    );
+  });
   const mSetDailyColor = useMutation(api.dailyTasks.setColor);
 
   // Weekly
@@ -279,7 +312,37 @@ export function useDataLayer() {
     );
   });
   const mSetWeeklyHabitTag = useMutation(api.weeklyTasks.setHabitTag);
-  const mReorderToWeekly = useMutation(api.weeklyTasks.reorderTo);
+  const mReorderToWeekly = useMutation(
+    api.weeklyTasks.reorderTo
+  ).withOptimisticUpdate((local, { id, targetIndex }) => {
+    const cur = local.getQuery(api.weeklyTasks.list);
+    if (cur === undefined) return;
+    const target = cur.find((t) => t._id === id);
+    if (!target) return;
+    const group = cur
+      .filter(
+        (t) =>
+          t.day === target.day &&
+          (t.parentId ?? undefined) === (target.parentId ?? undefined)
+      )
+      .sort((a, b) => a.order - b.order);
+    const fromIdx = group.findIndex((t) => t._id === id);
+    if (fromIdx === -1) return;
+    const clamped = Math.max(0, Math.min(group.length - 1, targetIndex));
+    if (fromIdx === clamped) return;
+    const reordered = [...group];
+    const [moved] = reordered.splice(fromIdx, 1);
+    reordered.splice(clamped, 0, moved);
+    const orderMap = new Map();
+    reordered.forEach((t, i) => orderMap.set(t._id, i));
+    local.setQuery(
+      api.weeklyTasks.list,
+      {},
+      cur.map((t) =>
+        orderMap.has(t._id) ? { ...t, order: orderMap.get(t._id) } : t
+      )
+    );
+  });
   const mSetWeeklyColor = useMutation(api.weeklyTasks.setColor);
 
   // Projects
