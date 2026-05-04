@@ -5495,10 +5495,6 @@ function DraggableTaskList({ items, renderItem }) {
         didDrag = true;
         document.body.style.userSelect = "none";
         document.body.style.cursor = "grabbing";
-        // Tag the body so CSS can suspend backdrop-filter on every
-        // task row — combining backdrop blur with per-frame transform
-        // updates was causing the global "shrink-and-expand" flash.
-        document.body.classList.add("tasks-dragging");
         try {
           window.getSelection()?.removeAllRanges();
         } catch {
@@ -5536,7 +5532,6 @@ function DraggableTaskList({ items, renderItem }) {
       document.removeEventListener("mouseup", onUp);
       document.body.style.userSelect = "";
       document.body.style.cursor = "";
-      document.body.classList.remove("tasks-dragging");
       if (didDrag) {
         const swallow = (ce) => {
           ce.preventDefault();
@@ -5693,22 +5688,27 @@ function TaskRow({
   const showChevron = !!toggleCollapsed && hasChildren;
   const reserveChevron = !!toggleCollapsed && !compact;
 
-  // When colorHex is set, paint the entire row with a translucent
-  // tint of that color. Light + dark each get their own opacity so
-  // the row stays readable. Dragged rows lift with a slight scale +
-  // strong shadow; sibling rows shift via translateY with a smooth
-  // CSS transition.
-  const rowStyle = {
-    transform: `translateY(${translateY}px)${isLifting ? " scale(1.015)" : ""}`,
-    transition: isLifting
+  // Apply transform/transition styles ONLY when the row is actually
+  // moving (translated or lifted). At rest, leave inline style empty
+  // so the browser doesn't promote every row to its own GPU
+  // compositor layer — that promotion combined with backdrop-filter
+  // was causing the brief shrink-and-expand flash across every row
+  // whenever a drag began.
+  const isMoving = translateY !== 0 || isLifting;
+  const rowStyle = {};
+  if (isMoving) {
+    rowStyle.transform = `translate3d(0,${translateY}px,0)${isLifting ? " scale(1.015)" : ""}`;
+    rowStyle.transition = isLifting
       ? "none"
-      : "transform 220ms cubic-bezier(0.2, 0.7, 0.2, 1)",
-    zIndex: isLifting ? 50 : undefined,
-    position: "relative",
-    boxShadow: isLifting ? "0 14px 32px rgba(0,0,0,0.18)" : undefined,
-    cursor: onRowMouseDown ? (isLifting ? "grabbing" : "grab") : undefined,
-    userSelect: isLifting ? "none" : undefined,
-  };
+      : "transform 220ms cubic-bezier(0.2, 0.7, 0.2, 1)";
+    rowStyle.willChange = "transform";
+  }
+  if (isLifting) {
+    rowStyle.zIndex = 50;
+    rowStyle.position = "relative";
+    rowStyle.boxShadow = "0 14px 32px rgba(0,0,0,0.18)";
+    rowStyle.userSelect = "none";
+  }
   const colorBg = colorHex
     ? { background: `${colorHex}22` }
     : undefined;
@@ -5718,8 +5718,13 @@ function TaskRow({
       className={[
         "transition-[margin-bottom] duration-200 ease-out",
         liSpacing,
+        onRowMouseDown
+          ? isLifting
+            ? "cursor-grabbing"
+            : "cursor-grab"
+          : "",
       ].join(" ")}
-      style={rowStyle}
+      style={isMoving || isLifting ? rowStyle : undefined}
       onMouseDown={onRowMouseDown}
     >
       <div
