@@ -5475,6 +5475,11 @@ function DraggableTaskList({ items, renderItem }) {
     }
     const rowEl = refs.current[item.id];
     if (!rowEl) return;
+    // Stop the mousedown from bubbling to an outer DraggableTaskList's
+    // handler. Without this, dragging a step also triggered the
+    // parent task's drag because the parent <li>'s onMouseDown also
+    // received the bubbled event.
+    e.stopPropagation();
     const rowHeight = rowEl.offsetHeight;
     const startY = e.clientY;
     let dragging = false;
@@ -5490,8 +5495,10 @@ function DraggableTaskList({ items, renderItem }) {
         didDrag = true;
         document.body.style.userSelect = "none";
         document.body.style.cursor = "grabbing";
-        // Drop the page selection that may have been started before
-        // we crossed the threshold.
+        // Tag the body so CSS can suspend backdrop-filter on every
+        // task row — combining backdrop blur with per-frame transform
+        // updates was causing the global "shrink-and-expand" flash.
+        document.body.classList.add("tasks-dragging");
         try {
           window.getSelection()?.removeAllRanges();
         } catch {
@@ -5529,6 +5536,7 @@ function DraggableTaskList({ items, renderItem }) {
       document.removeEventListener("mouseup", onUp);
       document.body.style.userSelect = "";
       document.body.style.cursor = "";
+      document.body.classList.remove("tasks-dragging");
       if (didDrag) {
         const swallow = (ce) => {
           ce.preventDefault();
