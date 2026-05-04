@@ -57,6 +57,13 @@ const HabitIcon = ({ className = "", ...rest }) => (
 const SidebarIcon = (props) => (
   <Icon icon="solar:sidebar-minimalistic-linear" {...props} />
 );
+// Plan view's sidebar icon. Defined as a stable top-level constant
+// so re-renders of <Sidebar> don't pass a *new* component reference
+// each pass — that would unmount/remount the <Icon> and produce the
+// brief icon flash the user saw on every parent render.
+const PlanSidebarIcon = (props) => (
+  <Icon icon="solar:notebook-bold-duotone" {...props} />
+);
 
 const STORAGE_KEY = "todos_v3";
 const LEGACY_STORAGE_KEY = "todos_v2";
@@ -1725,9 +1732,7 @@ function Sidebar({
           onClick={() => setView({ type: "goalspage" })}
         />
         <SidebarItem
-          Icon={(props) => (
-            <Icon icon="solar:notebook-bold-duotone" {...props} />
-          )}
+          Icon={PlanSidebarIcon}
           iconColor="text-indigo-500"
           label="Plan"
           active={view.type === "plan"}
@@ -5258,15 +5263,14 @@ function InlineTitle({
       className={[
         "flex-1 min-w-0 cursor-text truncate",
         sizeClass,
-        !title
-          ? "italic text-neutral-400 dark:text-neutral-500"
-          : done
-            ? "line-through text-neutral-400 dark:text-neutral-500"
-            : tint,
+        done ? "line-through text-neutral-400 dark:text-neutral-500" : tint,
       ].join(" ")}
-      title={title || "Untitled"}
+      title={title}
     >
-      {title || "Untitled — click to edit"}
+      {/* Empty span needs *some* content so the click target has
+          area when the title is blank. A non-breaking space is
+          invisible but takes up baseline width. */}
+      {title || " "}
     </span>
   );
 }
@@ -5672,10 +5676,16 @@ function TaskRow({
     const c = countLeafSteps(item);
     return c.total > 0 ? c : null;
   }, [item, topLevelOnly]);
-  // Only the TodayView's top-level rows control their own gap to the next task —
-  // compact day-column tasks use the parent <ul>'s space-y for tight stacking.
+  // Only the TodayView's top-level rows control their own gap.
+  // Compact day-column tasks use the parent <ul>'s space-y for tight
+  // stacking. Tasks with visible steps get a balanced margin both
+  // above and below so they read as a card with breathing room.
   const liSpacing =
-    !compact && depth === 0 ? (showsChildren ? "mb-5" : "mb-2") : "";
+    !compact && depth === 0
+      ? showsChildren
+        ? "mt-5 mb-5 first:mt-0"
+        : "mb-2"
+      : "";
   const showChevron = !!toggleCollapsed && hasChildren;
   const reserveChevron = !!toggleCollapsed && !compact;
 
@@ -5702,7 +5712,7 @@ function TaskRow({
     <li
       ref={liRef}
       className={[
-        "transition-[margin-bottom] duration-200 ease-out",
+        "transition-[margin-top,margin-bottom] duration-200 ease-out",
         liSpacing,
       ].join(" ")}
       style={rowStyle}
