@@ -164,6 +164,18 @@ function eventsForDate(bundle, date) {
           ...b,
           startMin: toMin(b.s),
           endMin: toMin(b.e),
+          // _source identifies the row+block to update when this
+          // event is edited. origS/E/T/C survive trim+fillGaps so
+          // we can match against the unmodified template block.
+          _source: {
+            kind: "schedule",
+            energy: sched.energy,
+            phase: sched.phase,
+            origS: b.s,
+            origE: b.e,
+            origT: b.t,
+            origC: b.c,
+          },
         });
       }
     }
@@ -178,6 +190,14 @@ function eventsForDate(bundle, date) {
         ...b,
         startMin: toMin(b.s),
         endMin: toMin(b.e),
+        _source: {
+          kind: "lecture",
+          dow,
+          origS: b.s,
+          origE: b.e,
+          origT: b.t,
+          origC: b.c,
+        },
       });
     }
   }
@@ -338,12 +358,12 @@ function CalendarEvent({
   isNow,
   onClick,
 }) {
-  const top = (event.startMin - TIMELINE_START_MIN) * PX_PER_MIN;
+  const top = (event.startMin - TIMELINE_START_MIN) * PX_PER_MIN + 2;
   const heightRaw = (event.endMin - event.startMin) * PX_PER_MIN;
-  const height = Math.max(20, heightRaw - 2);
+  const height = Math.max(22, heightRaw - 6);
   const widthPct = 100 / event.totalCols;
   const leftPct = event.col * widthPct;
-  const isShort = heightRaw < 32;
+  const isShort = heightRaw < 36;
   const time = `${fmtMin(event.startMin)}–${fmtMin(event.endMin)}`;
   return (
     <button
@@ -354,8 +374,8 @@ function CalendarEvent({
       style={{
         top: `${top}px`,
         height: `${height}px`,
-        left: `calc(${leftPct}% + 1px)`,
-        width: `calc(${widthPct}% - 4px)`,
+        left: `calc(${leftPct}% + 3px)`,
+        width: `calc(${widthPct}% - 8px)`,
         textAlign: "left",
         ...categoryStyleFor(event.c),
       }}
@@ -796,8 +816,35 @@ function EnergyPicker({ open, onClose, onPick, suggestedId, dayLabel }) {
 
 // ──────────────── Tracking modal ────────────────
 
-function TrackingModal({ open, ev, dateIso, currentStatus, onClose, onSet }) {
+function TrackingModal({
+  open,
+  ev,
+  dateIso,
+  currentStatus,
+  onClose,
+  onSet,
+  onEditSave,
+  onEditDelete,
+}) {
+  const [mode, setMode] = useState("track");
+  const [title, setTitle] = useState("");
+  const [start, setStart] = useState("");
+  const [end, setEnd] = useState("");
+  const [category, setCategory] = useState("");
+
+  useEffect(() => {
+    if (ev) {
+      setTitle(ev.t || "");
+      setStart(ev._source?.origS || ev.s || "");
+      setEnd(ev._source?.origE || ev.e || "");
+      setCategory(ev.c || "");
+    }
+    setMode("track");
+  }, [ev]);
+
   if (!open || !ev) return null;
+
+  const canEdit = !!ev._source;
   const STATUSES = [
     {
       id: "completed",
@@ -815,6 +862,7 @@ function TrackingModal({ open, ev, dateIso, currentStatus, onClose, onSet }) {
       cls: "bg-rose-500/15 text-rose-700 dark:text-rose-300 border-rose-500/40",
     },
   ];
+
   return (
     <div
       className="fixed inset-0 z-[100] bg-black/40 backdrop-blur-sm flex items-center justify-center p-4"
@@ -824,49 +872,164 @@ function TrackingModal({ open, ev, dateIso, currentStatus, onClose, onSet }) {
         className="lg-card rounded-2xl p-6 max-w-md w-full"
         onClick={(e) => e.stopPropagation()}
       >
-        <h3 className="text-base font-semibold">{ev.t}</h3>
-        <p className="text-xs text-neutral-500 dark:text-neutral-400 mt-1">
-          {ev.s}–{ev.e} · {ev.d} ·{" "}
-          {CATEGORY_BY_ID[ev.c]?.label || ev.c}
-        </p>
-        <p className="text-xs text-neutral-500 dark:text-neutral-400 mt-4">
-          How did this go?
-        </p>
-        <div className="grid grid-cols-3 gap-2 mt-2">
-          {STATUSES.map((s) => {
-            const active = currentStatus === s.id;
-            return (
+        {mode === "track" ? (
+          <>
+            <h3 className="text-base font-semibold">{ev.t}</h3>
+            <p className="text-xs text-neutral-500 dark:text-neutral-400 mt-1">
+              {ev.s}–{ev.e} · {ev.d} ·{" "}
+              {CATEGORY_BY_ID[ev.c]?.label || ev.c}
+            </p>
+            <p className="text-xs text-neutral-500 dark:text-neutral-400 mt-4">
+              How did this go?
+            </p>
+            <div className="grid grid-cols-3 gap-2 mt-2">
+              {STATUSES.map((s) => {
+                const active = currentStatus === s.id;
+                return (
+                  <button
+                    key={s.id}
+                    onClick={() => onSet(s.id)}
+                    className={[
+                      "px-3 py-2 rounded-md text-sm font-medium border transition-all",
+                      active
+                        ? s.cls
+                        : "lg-task border-transparent text-neutral-700 dark:text-neutral-300",
+                    ].join(" ")}
+                  >
+                    {s.label}
+                  </button>
+                );
+              })}
+            </div>
+            <div className="mt-5 flex justify-between gap-2">
+              <div className="flex gap-2">
+                {canEdit && (
+                  <button
+                    className="px-3 py-1.5 rounded-md text-xs text-neutral-600 dark:text-neutral-300 lg-task"
+                    onClick={() => setMode("edit")}
+                  >
+                    Edit block
+                  </button>
+                )}
+              </div>
+              <div className="flex gap-2">
+                {currentStatus && (
+                  <button
+                    className="px-3 py-1.5 rounded-md text-xs text-neutral-600 dark:text-neutral-400 hover:bg-black/5 dark:hover:bg-white/5"
+                    onClick={() => onSet("clear")}
+                  >
+                    Clear
+                  </button>
+                )}
+                <button
+                  className="px-3 py-1.5 rounded-md text-xs text-neutral-600 dark:text-neutral-400 hover:bg-black/5 dark:hover:bg-white/5"
+                  onClick={onClose}
+                >
+                  Close
+                </button>
+              </div>
+            </div>
+          </>
+        ) : (
+          <>
+            <div className="flex items-center justify-between">
+              <h3 className="text-base font-semibold">Edit block</h3>
               <button
-                key={s.id}
-                onClick={() => onSet(s.id)}
-                className={[
-                  "px-3 py-2 rounded-md text-sm font-medium border transition-all",
-                  active
-                    ? s.cls
-                    : "lg-task border-transparent text-neutral-700 dark:text-neutral-300",
-                ].join(" ")}
+                className="text-xs text-neutral-500 hover:text-neutral-900 dark:hover:text-neutral-100"
+                onClick={() => setMode("track")}
               >
-                {s.label}
+                ← Back
               </button>
-            );
-          })}
-        </div>
-        <div className="mt-5 flex justify-end gap-2">
-          {currentStatus && (
-            <button
-              className="px-3 py-1.5 rounded-md text-xs text-neutral-600 dark:text-neutral-400 hover:bg-black/5 dark:hover:bg-white/5"
-              onClick={() => onSet("clear")}
-            >
-              Clear
-            </button>
-          )}
-          <button
-            className="px-3 py-1.5 rounded-md text-xs text-neutral-600 dark:text-neutral-400 hover:bg-black/5 dark:hover:bg-white/5"
-            onClick={onClose}
-          >
-            Close
-          </button>
-        </div>
+            </div>
+            <p className="text-xs text-neutral-500 dark:text-neutral-400 mt-1">
+              Changes apply to the {ev._source.kind === "lecture" ? "weekly recurring lecture" : "schedule template"} — every day that uses it picks up the change.
+            </p>
+
+            <div className="grid grid-cols-1 gap-3 mt-4">
+              <Field label="Title">
+                <input
+                  value={title}
+                  onChange={(e) => setTitle(e.target.value)}
+                  className="w-full px-3 py-1.5 rounded-md bg-white/60 dark:bg-neutral-900/60 border border-black/10 dark:border-white/10 text-sm"
+                />
+              </Field>
+              <div className="grid grid-cols-2 gap-3">
+                <Field label="Start">
+                  <input
+                    type="time"
+                    value={start}
+                    onChange={(e) => setStart(e.target.value)}
+                    className="w-full px-3 py-1.5 rounded-md bg-white/60 dark:bg-neutral-900/60 border border-black/10 dark:border-white/10 text-sm"
+                  />
+                </Field>
+                <Field label="End">
+                  <input
+                    type="time"
+                    value={end}
+                    onChange={(e) => setEnd(e.target.value)}
+                    className="w-full px-3 py-1.5 rounded-md bg-white/60 dark:bg-neutral-900/60 border border-black/10 dark:border-white/10 text-sm"
+                  />
+                </Field>
+              </div>
+              <Field label="Category (color)">
+                <select
+                  value={category}
+                  onChange={(e) => setCategory(e.target.value)}
+                  disabled={ev._source.kind === "lecture"}
+                  className="w-full px-3 py-1.5 rounded-md bg-white/60 dark:bg-neutral-900/60 border border-black/10 dark:border-white/10 text-sm disabled:opacity-50"
+                >
+                  {CATEGORIES.map((c) => (
+                    <option key={c.id} value={c.id}>
+                      {c.label}
+                    </option>
+                  ))}
+                </select>
+              </Field>
+            </div>
+
+            <div className="mt-5 flex justify-between gap-2">
+              <button
+                className="px-3 py-1.5 rounded-md text-xs text-rose-600 dark:text-rose-400 hover:bg-rose-500/10"
+                onClick={() => {
+                  onEditDelete(ev);
+                  onClose();
+                }}
+              >
+                Delete block
+              </button>
+              <div className="flex gap-2">
+                <button
+                  className="px-3 py-1.5 rounded-md text-xs text-neutral-600 dark:text-neutral-400 hover:bg-black/5 dark:hover:bg-white/5"
+                  onClick={() => setMode("track")}
+                >
+                  Cancel
+                </button>
+                <button
+                  className="px-3 py-1.5 rounded-md bg-blue-600 text-white text-xs hover:bg-blue-700 disabled:opacity-50"
+                  disabled={
+                    !title.trim() ||
+                    !/^\d{2}:\d{2}$/.test(start) ||
+                    !/^\d{2}:\d{2}$/.test(end) ||
+                    toMin(start) >= toMin(end)
+                  }
+                  onClick={() => {
+                    const dur = toMin(end) - toMin(start);
+                    onEditSave(ev, {
+                      s: start,
+                      e: end,
+                      t: title.trim(),
+                      c: category,
+                      d: `${dur}m`,
+                    });
+                    onClose();
+                  }}
+                >
+                  Save
+                </button>
+              </div>
+            </div>
+          </>
+        )}
       </div>
     </div>
   );
@@ -2268,26 +2431,31 @@ export default function PlanView({ planSubView, setPlanSubView, bundle, goals })
   const autoResetRef = useRef(false);
   useEffect(() => {
     if (autoResetRef.current) return;
-    if (!bundle?.schedules) return;
+    if (!bundle?.schedules || !bundle?.lectures) return;
     const STALE_TITLES = new Set([
       "Reading",
       "Light revision",
       "Long, slow breakfast",
       "Slow, comforting breakfast",
     ]);
-    const isStale = bundle.schedules.some((s) =>
+    const staleSchedule = bundle.schedules.some((s) =>
       s.blocks?.some(
         (b) =>
           STALE_TITLES.has(b.t) ||
           (b.t === "Breakfast" && toMin(b.e) - toMin(b.s) > 30)
       )
     );
-    if (isStale) {
+    // Wednesday's lecture row used to include a morning Psych Lecture
+    // that didn't actually exist on the user's real schedule.
+    const wedRow = bundle.lectures.find((l) => l.dow === 3);
+    const staleLectures =
+      wedRow?.blocks?.some((b) => b.t === "Psych Lecture") ?? false;
+    if (staleSchedule || staleLectures) {
       autoResetRef.current = true;
       mut.resetDefaults({ planId: bundle.plan._id });
     }
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [bundle?.schedules?.length]);
+  }, [bundle?.schedules?.length, bundle?.lectures?.length]);
 
   // Pop the energy picker if today doesn't have a row yet.
   const todayIso = isoDate(todayDate);
@@ -2390,6 +2558,88 @@ export default function PlanView({ planSubView, setPlanSubView, bundle, goals })
             status,
           });
           setTrackingModal(null);
+        }}
+        onEditSave={(ev, edits) => {
+          const src = ev._source;
+          if (!src) return;
+          if (src.kind === "lecture") {
+            const lec = bundle.lectures.find((l) => l.dow === src.dow);
+            if (!lec) return;
+            const newBlocks = lec.blocks.map((b) =>
+              b.s === src.origS &&
+              b.e === src.origE &&
+              b.t === src.origT &&
+              b.c === src.origC
+                ? { ...b, ...edits }
+                : b
+            );
+            mut.upsertLectures({
+              planId: bundle.plan._id,
+              dow: src.dow,
+              blocks: newBlocks,
+            });
+          } else {
+            const sched = bundle.schedules.find(
+              (s) => s.energy === src.energy && s.phase === src.phase
+            );
+            if (!sched) return;
+            const newBlocks = sched.blocks.map((b) =>
+              b.s === src.origS &&
+              b.e === src.origE &&
+              b.t === src.origT &&
+              b.c === src.origC
+                ? { ...b, ...edits }
+                : b
+            );
+            mut.upsertSchedule({
+              planId: bundle.plan._id,
+              energy: src.energy,
+              phase: src.phase,
+              blocks: newBlocks,
+            });
+          }
+        }}
+        onEditDelete={(ev) => {
+          const src = ev._source;
+          if (!src) return;
+          if (src.kind === "lecture") {
+            const lec = bundle.lectures.find((l) => l.dow === src.dow);
+            if (!lec) return;
+            const newBlocks = lec.blocks.filter(
+              (b) =>
+                !(
+                  b.s === src.origS &&
+                  b.e === src.origE &&
+                  b.t === src.origT &&
+                  b.c === src.origC
+                )
+            );
+            mut.upsertLectures({
+              planId: bundle.plan._id,
+              dow: src.dow,
+              blocks: newBlocks,
+            });
+          } else {
+            const sched = bundle.schedules.find(
+              (s) => s.energy === src.energy && s.phase === src.phase
+            );
+            if (!sched) return;
+            const newBlocks = sched.blocks.filter(
+              (b) =>
+                !(
+                  b.s === src.origS &&
+                  b.e === src.origE &&
+                  b.t === src.origT &&
+                  b.c === src.origC
+                )
+            );
+            mut.upsertSchedule({
+              planId: bundle.plan._id,
+              energy: src.energy,
+              phase: src.phase,
+              blocks: newBlocks,
+            });
+          }
         }}
       />
     </div>

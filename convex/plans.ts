@@ -113,9 +113,6 @@ const SEED_LECTURES: Record<number, any[]> = {
     { s: "12:00", e: "12:20", t: "Walk back", c: "lecture", d: "20m" },
   ],
   3: [
-    { s: "10:40", e: "11:00", t: "Walk to lecture", c: "lecture", d: "20m" },
-    { s: "11:00", e: "12:00", t: "Psych Lecture", c: "lecture", d: "60m" },
-    { s: "12:00", e: "12:20", t: "Walk back", c: "lecture", d: "20m" },
     { s: "15:25", e: "15:45", t: "Walk to tutorial", c: "lecture", d: "20m" },
     { s: "15:45", e: "16:45", t: "Psych Tutorial", c: "lecture", d: "60m" },
     { s: "16:45", e: "17:05", t: "Walk back", c: "lecture", d: "20m" },
