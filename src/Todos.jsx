@@ -5690,16 +5690,14 @@ function TaskRow({
   const showChevron = !!toggleCollapsed && hasChildren;
   const reserveChevron = !!toggleCollapsed && !compact;
 
-  // Plain translateY (no translate3d, no will-change) so the browser
-  // doesn't aggressively promote/demote compositor layers on each
-  // drag cycle — the layer churn was producing a brief residual
-  // flash even after backdrop-filter was suspended. Position is
-  // always relative (via .relative className below) so toggling
-  // zIndex on lift doesn't introduce a layout property change.
+  // Pure translateY — no scale, no translate3d, no will-change.
+  // Scale was the last visible "size change" property and was the
+  // most likely cause of the residual sub-perceptible flash. The
+  // lift effect now comes from box-shadow + elevated zIndex alone.
   const isMoving = translateY !== 0 || isLifting;
   const rowStyle = {};
   if (isMoving) {
-    rowStyle.transform = `translateY(${translateY}px)${isLifting ? " scale(1.015)" : ""}`;
+    rowStyle.transform = `translateY(${translateY}px)`;
     rowStyle.transition = isLifting
       ? "none"
       : "transform 220ms cubic-bezier(0.2, 0.7, 0.2, 1)";
