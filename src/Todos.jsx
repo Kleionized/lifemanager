@@ -5577,12 +5577,17 @@ function DraggableTaskList({ items, renderItem }) {
 
   return items.map((item, idx) => {
     let dy = 0;
-    let lifting = false;
+    let isLifting = false;
+    // forceSnap = "this row's transform should change instantly".
+    // Active dragged row, every row during pre-settle. Siblings
+    // shifting during active drag still get the smooth transition.
+    let forceSnap = false;
     if (drag) {
       if (drag.phase === "active") {
         if (drag.itemId === item.id) {
           dy = drag.deltaY;
-          lifting = true;
+          isLifting = true;
+          forceSnap = true;
         } else if (
           drag.fromIndex < drag.targetIndex &&
           idx > drag.fromIndex &&
@@ -5597,21 +5602,26 @@ function DraggableTaskList({ items, renderItem }) {
           dy = drag.height;
         }
       } else if (drag.phase === "pre-settle") {
-        // Items were reordered. Disable transitions everywhere so
-        // the FLIP snaps; only the moved row needs an offset.
-        lifting = true;
-        if (drag.itemId === item.id) dy = drag.deltaY;
+        // FLIP snap — every row needs transition disabled so the
+        // browser doesn't mid-flight-cancel and re-fire any pending
+        // transitions when the array reorders.
+        forceSnap = true;
+        if (drag.itemId === item.id) {
+          dy = drag.deltaY;
+          isLifting = true;
+        }
       } else if (drag.phase === "settling") {
-        // Transitions back on, transforms all 0. The moved row
-        // animates from its previous (FLIP) offset to 0.
-        // Other rows already settled.
+        // Transitions back on. Dragged row's transform animates
+        // from its previous (FLIP) offset to 0.
+        if (drag.itemId === item.id) isLifting = true;
       }
     }
     return renderItem({
       item,
       idx,
       translateY: dy,
-      isLifting: lifting,
+      isLifting,
+      forceSnap,
       onRowMouseDown: (e) => startDrag(e, item, idx),
       registerRowRef: (el) => {
         if (el) refs.current[item.id] = el;
@@ -5637,6 +5647,7 @@ function TaskRow({
   registerRowRef,
   translateY = 0,
   isLifting = false,
+  forceSnap = false,
   onOpenDetail,
   compact,
   topLevelOnly = false,
@@ -5690,17 +5701,21 @@ function TaskRow({
   const showChevron = !!toggleCollapsed && hasChildren;
   const reserveChevron = !!toggleCollapsed && !compact;
 
-  // Pure translateY — no scale, no translate3d, no will-change.
-  // Scale was the last visible "size change" property and was the
-  // most likely cause of the residual sub-perceptible flash. The
-  // lift effect now comes from box-shadow + elevated zIndex alone.
+  // The transition system stays consistent: transform is always the
+  // animatable property, only the duration toggles between 0ms
+  // (forceSnap, e.g. lifted row tracking the cursor or every row
+  // during the FLIP snap) and 320ms (smooth siblings + the actual
+  // settle animation). Avoiding "transition: none" eliminates the
+  // mid-flight-cancellation glitch some browsers show when the
+  // transition-property list flips between empty and populated.
   const isMoving = translateY !== 0 || isLifting;
+  const needsStyle = isMoving || forceSnap;
   const rowStyle = {};
-  if (isMoving) {
+  if (needsStyle) {
     rowStyle.transform = `translateY(${translateY}px)`;
-    rowStyle.transition = isLifting
-      ? "none"
-      : "transform 220ms cubic-bezier(0.2, 0.7, 0.2, 1)";
+    rowStyle.transitionProperty = "transform";
+    rowStyle.transitionDuration = forceSnap ? "0ms" : "320ms";
+    rowStyle.transitionTimingFunction = "cubic-bezier(0.22, 1, 0.36, 1)";
   }
   if (isLifting) {
     rowStyle.zIndex = 50;
@@ -5721,7 +5736,7 @@ function TaskRow({
             : "cursor-grab"
           : "",
       ].join(" ")}
-      style={isMoving ? rowStyle : undefined}
+      style={needsStyle ? rowStyle : undefined}
       onMouseDown={onRowMouseDown}
     >
       <div
