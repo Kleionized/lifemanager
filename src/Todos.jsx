@@ -783,23 +783,18 @@ function bindTask(task, parentPath, handlers) {
     onDelete: () => handlers.delete(path),
     onAddChild: (title) => handlers.addChild(path, title),
     onAddSibling: () => handlers.addAt(parentPath),
-    onReorder: handlers.reorder
-      ? (dir) => handlers.reorder(path, dir)
-      : undefined,
     onSchedule: handlers.schedule
       ? (dateIso) => handlers.schedule(path, dateIso)
       : undefined,
-    // Top-level only (parentPath empty) — moveTo and setColor flow
-    // through the task id, not a path. Subtasks keep arrow-button
-    // reordering and don't get color tagging for now.
-    onMoveTo:
-      parentPath.length === 0 && handlers.moveTo
-        ? (targetIndex) => handlers.moveTo(task.id, targetIndex)
-        : undefined,
-    onSetColor:
-      parentPath.length === 0 && handlers.setColor
-        ? (color) => handlers.setColor(task.id, color)
-        : undefined,
+    // moveTo + setColor are on every level — the reorderTo mutation
+    // operates within the task's parentId group, so it works for top
+    // level, steps, and sub-steps without extra wiring.
+    onMoveTo: handlers.moveTo
+      ? (targetIndex) => handlers.moveTo(task.id, targetIndex)
+      : undefined,
+    onSetColor: handlers.setColor
+      ? (color) => handlers.setColor(task.id, color)
+      : undefined,
     children: (task.children || []).map((c) => bindTask(c, path, handlers)),
   };
 }
@@ -814,6 +809,7 @@ export default function Todos() {
     addDaily, addDailyChild, addAtDaily, toggleDaily, updateDaily, deleteDaily,
     reorderDailyTo, setDailyColor,
     addWeekly, addWeeklyChild, addAtWeekly, toggleWeekly, updateWeekly, deleteWeekly,
+    reorderWeeklyTo, setWeeklyColor,
     addProject, deleteProject, updateProjectTitle, cycleProjectType, setProjectIcon,
     addWeek, deleteWeek, addProjectTask, addProjectTaskChild, addAtProjectTask,
     toggleProjectTask, updateProjectTaskTitle, deleteProjectTask,
@@ -1205,27 +1201,30 @@ export default function Todos() {
     }
   }, [editingId, state.daily]);
 
-  // Cmd/Ctrl + 1/2/3 hotkeys for adding tasks/steps/sub-steps with
-  // immediate edit-mode focus. Active only on the Today view.
+  // Cmd/Ctrl + H/J/K hotkeys for adding tasks/steps/sub-steps with
+  // immediate edit-mode focus. Active only on the Today view. We
+  // route the focus through `pendingEditId` so the input mounts and
+  // grabs focus once the new row appears in local state — Convex's
+  // query update may land a frame later than the mutation resolution.
   useEffect(() => {
     const handler = async (e) => {
       const mod = e.metaKey || e.ctrlKey;
       if (!mod) return;
       if (view.type !== "daily") return;
-      // Skip if inside an input/textarea where digits are valid input.
       const tag = e.target.tagName;
       if (tag === "INPUT" || tag === "TEXTAREA") return;
-      if (e.key === "1") {
+      const key = e.key.toLowerCase();
+      if (key === "h") {
         e.preventDefault();
         const newId = await addAtDaily([]);
         if (newId) setEditingId(newId);
-      } else if (e.key === "2") {
+      } else if (key === "j") {
         const taskId = lastTaskIdRef.current;
         if (!taskId) return;
         e.preventDefault();
         const newId = await addAtDaily([taskId]);
         if (newId) setEditingId(newId);
-      } else if (e.key === "3") {
+      } else if (key === "k") {
         const taskId = lastTaskIdRef.current;
         const stepId = lastStepIdRef.current;
         if (!taskId || !stepId) return;
@@ -1243,6 +1242,8 @@ export default function Todos() {
     delete: deleteWeekly,
     addChild: addWeeklyChild,
     addAt: (parentPath) => addAtWeekly(parentPath, day),
+    moveTo: reorderWeeklyTo,
+    setColor: setWeeklyColor,
   });
   // Legacy goal handlers — week-bucketed shape.
   const projectHandlersFor = (projectId, weekId, day) => ({
@@ -1868,62 +1869,6 @@ function TodayView({
   toggleCollapsed,
   expandId,
 }) {
-  // Drag-and-drop reordering of top-level items.
-  const rowRefsRef = useRef({});
-  const registerRowRef = (id) => (el) => {
-    if (el) rowRefsRef.current[id] = el;
-    else delete rowRefsRef.current[id];
-  };
-  const [drag, setDrag] = useState(null);
-  // drag = null | { itemId, fromIndex, targetIndex }
-
-  const onDragHandleMouseDown = (e, item, fromIndex) => {
-    if (e.button !== 0 || !item.onMoveTo) return;
-    e.preventDefault();
-    const startY = e.clientY;
-    let dragging = false;
-    let lastTarget = fromIndex;
-
-    const onMove = (me) => {
-      if (!dragging) {
-        if (Math.abs(me.clientY - startY) < 4) return;
-        dragging = true;
-        document.body.style.userSelect = "none";
-        document.body.style.cursor = "grabbing";
-      }
-      // Hit-test rows by midpoint to decide target index.
-      let targetIndex = items.length;
-      for (let i = 0; i < items.length; i++) {
-        const el = rowRefsRef.current[items[i].id];
-        if (!el) continue;
-        const rect = el.getBoundingClientRect();
-        const mid = rect.top + rect.height / 2;
-        if (me.clientY < mid) {
-          targetIndex = i;
-          break;
-        }
-      }
-      // The dragged item gets removed before re-insertion, so its
-      // own slot doesn't count when computing the destination.
-      const adjusted = targetIndex > fromIndex ? targetIndex - 1 : targetIndex;
-      lastTarget = Math.max(0, Math.min(items.length - 1, adjusted));
-      setDrag({ itemId: item.id, fromIndex, targetIndex: lastTarget });
-    };
-    const onUp = () => {
-      document.removeEventListener("mousemove", onMove);
-      document.removeEventListener("mouseup", onUp);
-      document.body.style.userSelect = "";
-      document.body.style.cursor = "";
-      if (dragging && lastTarget !== fromIndex) {
-        item.onMoveTo(lastTarget);
-      }
-      setDrag(null);
-    };
-
-    document.addEventListener("mousemove", onMove);
-    document.addEventListener("mouseup", onUp);
-  };
-
   return (
     <div className="max-w-4xl mx-auto">
       <PageHeader
@@ -1943,12 +1888,17 @@ function TodayView({
         </div>
       ) : (
         <ul>
-          {items.map((item, idx) => (
-            <Fragment key={item.id}>
-              {drag && drag.targetIndex === idx && drag.itemId !== item.id && (
-                <li className="h-[3px] -my-0.5 rounded-full bg-blue-500/70" />
-              )}
+          <DraggableTaskList
+            items={items}
+            renderItem={({
+              item,
+              translateY,
+              isLifting,
+              onRowMouseDown,
+              registerRowRef,
+            }) => (
               <TaskRow
+                key={item.id}
                 item={item}
                 editingId={editingId}
                 setEditingId={setEditingId}
@@ -1959,22 +1909,16 @@ function TodayView({
                 onAddSibling={item.onAddSibling}
                 onReorder={item.onReorder}
                 onSchedule={item.onSchedule}
-                onDragHandleMouseDown={
-                  item.onMoveTo
-                    ? (e) => onDragHandleMouseDown(e, item, idx)
-                    : undefined
-                }
-                registerRowRef={registerRowRef(item.id)}
-                isDragging={drag?.itemId === item.id}
+                onRowMouseDown={onRowMouseDown}
+                registerRowRef={registerRowRef}
+                translateY={translateY}
+                isLifting={isLifting}
                 collapsedIds={collapsedIds}
                 toggleCollapsed={toggleCollapsed}
                 expandId={expandId}
               />
-            </Fragment>
-          ))}
-          {drag && drag.targetIndex === items.length - 1 && drag.fromIndex !== items.length - 1 && (
-            <li className="h-[3px] -my-0.5 rounded-full bg-blue-500/70" />
-          )}
+            )}
+          />
         </ul>
       )}
       <div className="lg-add mt-4 rounded-xl px-4 py-3">
@@ -2175,23 +2119,36 @@ function DayStack({
               )}
             </div>
             <ul className="space-y-1.5 flex-1">
-              {items.map((item) => (
-                <TaskRow
-                  key={item.id}
-                  item={item}
-                  editingId={editingId}
-                  setEditingId={setEditingId}
-                  onToggle={item.onToggle}
-                  onUpdate={item.onUpdate}
-                  onDelete={item.onDelete}
-                  onAddSibling={item.onAddSibling}
-                  onReorder={item.onReorder}
-                  onSchedule={item.onSchedule}
-                  onOpenDetail={onOpenDetail}
-                  compact
-                  topLevelOnly
-                />
-              ))}
+              <DraggableTaskList
+                items={items}
+                renderItem={({
+                  item,
+                  translateY,
+                  isLifting,
+                  onRowMouseDown,
+                  registerRowRef,
+                }) => (
+                  <TaskRow
+                    key={item.id}
+                    item={item}
+                    editingId={editingId}
+                    setEditingId={setEditingId}
+                    onToggle={item.onToggle}
+                    onUpdate={item.onUpdate}
+                    onDelete={item.onDelete}
+                    onAddSibling={item.onAddSibling}
+                    onReorder={item.onReorder}
+                    onSchedule={item.onSchedule}
+                    onOpenDetail={onOpenDetail}
+                    onRowMouseDown={onRowMouseDown}
+                    registerRowRef={registerRowRef}
+                    translateY={translateY}
+                    isLifting={isLifting}
+                    compact
+                    topLevelOnly
+                  />
+                )}
+              />
             </ul>
             <AddInput
               inputRef={dayRefSetters[key]}
@@ -4984,23 +4941,36 @@ function DayColumn({
           compact ? "space-y-1.5" : "space-y-2",
         ].join(" ")}
       >
-        {items.map((item) => (
-          <TaskRow
-            key={item.id}
-            item={item}
-            editingId={editingId}
-            setEditingId={setEditingId}
-            onToggle={item.onToggle}
-            onUpdate={item.onUpdate}
-            onDelete={item.onDelete}
-            onAddSibling={item.onAddSibling}
-            onReorder={item.onReorder}
-            onSchedule={item.onSchedule}
-            onOpenDetail={onOpenDetail}
-            compact
-            topLevelOnly
-          />
-        ))}
+        <DraggableTaskList
+          items={items}
+          renderItem={({
+            item,
+            translateY,
+            isLifting,
+            onRowMouseDown,
+            registerRowRef,
+          }) => (
+            <TaskRow
+              key={item.id}
+              item={item}
+              editingId={editingId}
+              setEditingId={setEditingId}
+              onToggle={item.onToggle}
+              onUpdate={item.onUpdate}
+              onDelete={item.onDelete}
+              onAddSibling={item.onAddSibling}
+              onReorder={item.onReorder}
+              onSchedule={item.onSchedule}
+              onOpenDetail={onOpenDetail}
+              onRowMouseDown={onRowMouseDown}
+              registerRowRef={registerRowRef}
+              translateY={translateY}
+              isLifting={isLifting}
+              compact
+              topLevelOnly
+            />
+          )}
+        />
       </ul>
 
       <AddInput
@@ -5456,6 +5426,132 @@ function ScheduleTaskButton({ onSchedule, iconClass }) {
   );
 }
 
+// Renders an array of task items as draggable rows. Uses a "lift &
+// shift" UX: the dragged row gets translated to follow the cursor in
+// real time, while the other rows in the same group transition to
+// make room. On release, the underlying onMoveTo mutation runs. The
+// 4-pixel movement threshold separates click-to-edit from drag.
+function DraggableTaskList({ items, renderItem }) {
+  const [drag, setDrag] = useState(null);
+  // drag = {
+  //   itemId, fromIndex, targetIndex, deltaY, height
+  // }
+  const refs = useRef({});
+
+  const startDrag = (e, item, fromIndex) => {
+    if (e.button !== 0 || !item.onMoveTo) return;
+    // Don't drag from interactive children — let them handle their own
+    // events first (checkbox toggle, edit input, swatch button, etc.).
+    if (
+      e.target.closest(
+        'input, textarea, button, [contenteditable], select'
+      )
+    ) {
+      return;
+    }
+    const rowEl = refs.current[item.id];
+    if (!rowEl) return;
+    const rowHeight = rowEl.offsetHeight;
+    const startY = e.clientY;
+    let dragging = false;
+    let didDrag = false;
+    let lastTarget = fromIndex;
+    e.preventDefault();
+
+    const onMove = (me) => {
+      const deltaY = me.clientY - startY;
+      if (!dragging) {
+        if (Math.abs(deltaY) < 4) return;
+        dragging = true;
+        didDrag = true;
+        document.body.style.userSelect = "none";
+        document.body.style.cursor = "grabbing";
+      }
+      // Hit-test the cursor against each sibling's midpoint so the
+      // target index updates as soon as the cursor crosses a midline.
+      let targetIdx = fromIndex;
+      for (let i = 0; i < items.length; i++) {
+        if (i === fromIndex) continue;
+        const el = refs.current[items[i].id];
+        if (!el) continue;
+        const rect = el.getBoundingClientRect();
+        const mid = rect.top + rect.height / 2;
+        if (i < fromIndex && me.clientY < mid) {
+          targetIdx = i;
+          break;
+        }
+        if (i > fromIndex && me.clientY > mid) {
+          targetIdx = i;
+        }
+      }
+      lastTarget = targetIdx;
+      setDrag({
+        itemId: item.id,
+        fromIndex,
+        targetIndex: targetIdx,
+        deltaY,
+        height: rowHeight,
+      });
+    };
+    const onUp = () => {
+      document.removeEventListener("mousemove", onMove);
+      document.removeEventListener("mouseup", onUp);
+      document.body.style.userSelect = "";
+      document.body.style.cursor = "";
+      if (didDrag) {
+        // Suppress the trailing click so it doesn't fire onStartEdit
+        // on the row's title.
+        const swallow = (ce) => {
+          ce.preventDefault();
+          ce.stopPropagation();
+        };
+        document.addEventListener("click", swallow, { capture: true, once: true });
+        setTimeout(() => {
+          document.removeEventListener("click", swallow, true);
+        }, 80);
+        if (lastTarget !== fromIndex) item.onMoveTo(lastTarget);
+      }
+      setDrag(null);
+    };
+    document.addEventListener("mousemove", onMove);
+    document.addEventListener("mouseup", onUp);
+  };
+
+  return items.map((item, idx) => {
+    let dy = 0;
+    let lifting = false;
+    if (drag) {
+      if (drag.itemId === item.id) {
+        dy = drag.deltaY;
+        lifting = true;
+      } else if (
+        drag.fromIndex < drag.targetIndex &&
+        idx > drag.fromIndex &&
+        idx <= drag.targetIndex
+      ) {
+        dy = -drag.height;
+      } else if (
+        drag.fromIndex > drag.targetIndex &&
+        idx >= drag.targetIndex &&
+        idx < drag.fromIndex
+      ) {
+        dy = drag.height;
+      }
+    }
+    return renderItem({
+      item,
+      idx,
+      translateY: dy,
+      isLifting: lifting,
+      onRowMouseDown: (e) => startDrag(e, item, idx),
+      registerRowRef: (el) => {
+        if (el) refs.current[item.id] = el;
+        else delete refs.current[item.id];
+      },
+    });
+  });
+}
+
 function TaskRow({
   item,
   depth = 0,
@@ -5468,9 +5564,10 @@ function TaskRow({
   onAddSibling,
   onReorder,
   onSchedule,
-  onDragHandleMouseDown,
+  onRowMouseDown,
   registerRowRef,
-  isDragging,
+  translateY = 0,
+  isLifting = false,
   onOpenDetail,
   compact,
   topLevelOnly = false,
@@ -5494,8 +5591,7 @@ function TaskRow({
     return () => {
       if (registerRowRef) registerRowRef(null);
     };
-    // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, []);
+  }, [registerRowRef]);
   const hasChildren =
     !topLevelOnly && item.children && item.children.length > 0;
   const canAddChild = !topLevelOnly && depth < 2 && !!onAddChild;
@@ -5523,14 +5619,34 @@ function TaskRow({
   const showChevron = !!toggleCollapsed && hasChildren;
   const reserveChevron = !!toggleCollapsed && !compact;
 
+  // When colorHex is set, paint the entire row with a translucent
+  // tint of that color. Light + dark each get their own opacity so
+  // the row stays readable. Dragged rows lift with a slight scale +
+  // strong shadow; sibling rows shift via translateY with a smooth
+  // CSS transition.
+  const rowStyle = {
+    transform: `translateY(${translateY}px)${isLifting ? " scale(1.015)" : ""}`,
+    transition: isLifting
+      ? "none"
+      : "transform 220ms cubic-bezier(0.2, 0.7, 0.2, 1)",
+    zIndex: isLifting ? 50 : undefined,
+    position: "relative",
+    boxShadow: isLifting ? "0 14px 32px rgba(0,0,0,0.18)" : undefined,
+    cursor: onRowMouseDown ? (isLifting ? "grabbing" : "grab") : undefined,
+    userSelect: isLifting ? "none" : undefined,
+  };
+  const colorBg = colorHex
+    ? { background: `${colorHex}22` }
+    : undefined;
   return (
     <li
       ref={liRef}
       className={[
-        "transition-[margin-bottom,opacity] duration-200 ease-out",
+        "transition-[margin-bottom] duration-200 ease-out",
         liSpacing,
-        isDragging ? "opacity-30" : "",
       ].join(" ")}
+      style={rowStyle}
+      onMouseDown={onRowMouseDown}
     >
       <div
         className={[
@@ -5538,26 +5654,8 @@ function TaskRow({
           sz.row,
           item.done ? "lg-task-done opacity-60" : "lg-task",
         ].join(" ")}
-        style={
-          colorHex
-            ? { boxShadow: `inset 4px 0 0 ${colorHex}` }
-            : undefined
-        }
+        style={colorBg}
       >
-        {onDragHandleMouseDown && (
-          <button
-            type="button"
-            onMouseDown={onDragHandleMouseDown}
-            aria-label="Drag to reorder"
-            className="flex-none opacity-0 group-hover:opacity-100 text-neutral-400 dark:text-neutral-500 hover:text-neutral-700 dark:hover:text-neutral-200 transition-opacity duration-150 -ml-1"
-            style={{ cursor: isDragging ? "grabbing" : "grab" }}
-          >
-            <Icon
-              icon="solar:hamburger-menu-linear"
-              className={sz.trash}
-            />
-          </button>
-        )}
         {showChevron ? (
           <button
             onClick={() => toggleCollapsed(item.id)}
@@ -5606,7 +5704,7 @@ function TaskRow({
           textClass={sz.text}
           depth={depth}
         />
-        {onReorder && !onDragHandleMouseDown && (
+        {onReorder && !onRowMouseDown && (
           <div className="flex-none flex items-center -mr-1 opacity-0 group-hover:opacity-100 transition-all duration-150">
             <button
               onClick={() => onReorder(-1)}
@@ -5648,16 +5746,19 @@ function TaskRow({
             <Plus className={sz.plus} />
           </button>
         )}
-        {leafCount && (
+        {/* Count badge gets a fixed-width column so the digits sit at
+            the same horizontal offset on every row, regardless of how
+            long the title is. */}
+        {topLevelOnly && (
           <span
             className={[
-              "flex-none text-[10px] tabular-nums",
-              leafCount.done === leafCount.total
+              "flex-none w-10 text-right text-[10px] tabular-nums",
+              leafCount && leafCount.done === leafCount.total
                 ? "text-emerald-600 dark:text-emerald-400"
                 : "text-neutral-400 dark:text-neutral-500",
             ].join(" ")}
           >
-            {leafCount.done}/{leafCount.total}
+            {leafCount ? `${leafCount.done}/${leafCount.total}` : ""}
           </span>
         )}
         {item.onSetColor && (
@@ -5711,26 +5812,39 @@ function TaskRow({
                 sizeKind === "compact" ? "pl-10" : "pl-12",
               ].join(" ")}
             >
-              {item.children?.map((child) => (
-                <TaskRow
-                  key={child.id}
-                  item={child}
-                  depth={depth + 1}
-                  editingId={editingId}
-                  setEditingId={setEditingId}
-                  onToggle={child.onToggle}
-                  onUpdate={child.onUpdate}
-                  onDelete={child.onDelete}
-                  onAddChild={child.onAddChild}
-                  onAddSibling={child.onAddSibling}
-                  onReorder={child.onReorder}
-                  onSchedule={child.onSchedule}
-                  compact={compact}
-                  collapsedIds={collapsedIds}
-                  toggleCollapsed={toggleCollapsed}
-                  expandId={expandId}
-                />
-              ))}
+              <DraggableTaskList
+                items={item.children || []}
+                renderItem={({
+                  item: child,
+                  translateY: childTy,
+                  isLifting: childLifting,
+                  onRowMouseDown: childMouseDown,
+                  registerRowRef: childRegisterRef,
+                }) => (
+                  <TaskRow
+                    key={child.id}
+                    item={child}
+                    depth={depth + 1}
+                    editingId={editingId}
+                    setEditingId={setEditingId}
+                    onToggle={child.onToggle}
+                    onUpdate={child.onUpdate}
+                    onDelete={child.onDelete}
+                    onAddChild={child.onAddChild}
+                    onAddSibling={child.onAddSibling}
+                    onReorder={child.onReorder}
+                    onSchedule={child.onSchedule}
+                    onRowMouseDown={childMouseDown}
+                    registerRowRef={childRegisterRef}
+                    translateY={childTy}
+                    isLifting={childLifting}
+                    compact={compact}
+                    collapsedIds={collapsedIds}
+                    toggleCollapsed={toggleCollapsed}
+                    expandId={expandId}
+                  />
+                )}
+              />
               {addingChild && (
                 <li
                   className={[

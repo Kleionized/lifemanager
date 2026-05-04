@@ -14,6 +14,9 @@ import { api } from "../convex/_generated/api";
 import { isoDate, mondayOf, addDays, dayOffsetFromMonday, todayKey } from "./dates";
 
 function nestTasks(flat) {
+  // Reconstructs the flat parentId rows into the legacy nested
+  // children[] shape Todos.jsx expects. Surfaces the optional `color`
+  // field so weekly + daily TaskRow share the same render code.
   const byParent = new Map();
   for (const t of flat) {
     const k = t.parentId || "__root__";
@@ -276,6 +279,8 @@ export function useDataLayer() {
     );
   });
   const mSetWeeklyHabitTag = useMutation(api.weeklyTasks.setHabitTag);
+  const mReorderToWeekly = useMutation(api.weeklyTasks.reorderTo);
+  const mSetWeeklyColor = useMutation(api.weeklyTasks.setColor);
 
   // Projects
   const mAddProject = useMutation(api.projects.add);
@@ -487,6 +492,10 @@ export function useDataLayer() {
     if (!id) return;
     mDeleteWeekly({ id });
   };
+  const reorderWeeklyTo = (id, targetIndex) =>
+    mReorderToWeekly({ id, targetIndex });
+  const setWeeklyColor = (id, color) =>
+    mSetWeeklyColor({ id, color: color || undefined });
 
   // Projects
   const addProject = (type) => {
@@ -706,6 +715,8 @@ export function useDataLayer() {
     toggleWeekly,
     updateWeekly,
     deleteWeekly,
+    reorderWeeklyTo,
+    setWeeklyColor,
     // projects
     addProject,
     deleteProject,

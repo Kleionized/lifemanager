@@ -39,6 +39,7 @@ export default defineSchema({
     parentId: v.optional(v.id("weekly_tasks")),
     order: v.number(),
     habitId: v.optional(v.id("habits")),
+    color: v.optional(v.string()),
     createdAt: v.number(),
   })
     .index("by_user_day", ["userId", "day"])

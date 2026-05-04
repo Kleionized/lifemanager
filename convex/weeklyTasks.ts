@@ -178,6 +178,56 @@ export const remove = mutation({
   },
 });
 
+// Same shape as dailyTasks.reorderTo — moves the row to a target index
+// within its sibling group (same day + same parentId).
+export const reorderTo = mutation({
+  args: {
+    id: v.id("weekly_tasks"),
+    targetIndex: v.number(),
+  },
+  handler: async (ctx, { id, targetIndex }) => {
+    const userId = await requireUserId(ctx);
+    const task = await getOwned<Doc<"weekly_tasks">>(ctx, id, userId);
+    const siblings = await ctx.db
+      .query("weekly_tasks")
+      .withIndex("by_user_day", (q) =>
+        q.eq("userId", userId).eq("day", task.day)
+      )
+      .collect();
+    const group = siblings
+      .filter((t) => (t.parentId ?? undefined) === (task.parentId ?? undefined))
+      .sort((a, b) => a.order - b.order);
+    const fromIdx = group.findIndex((t) => t._id === id);
+    if (fromIdx === -1) return;
+    const clamped = Math.max(0, Math.min(group.length - 1, targetIndex));
+    if (fromIdx === clamped) return;
+    const reordered = [...group];
+    const [moved] = reordered.splice(fromIdx, 1);
+    reordered.splice(clamped, 0, moved);
+    const rec = new UndoRecorder(ctx, userId);
+    for (let i = 0; i < reordered.length; i++) {
+      if (reordered[i].order !== i) {
+        await rec.patch("weekly_tasks", reordered[i]._id, { order: i });
+      }
+    }
+    await rec.commit("Reorder task");
+  },
+});
+
+export const setColor = mutation({
+  args: {
+    id: v.id("weekly_tasks"),
+    color: v.optional(v.string()),
+  },
+  handler: async (ctx, { id, color }) => {
+    const userId = await requireUserId(ctx);
+    await getOwned(ctx, id, userId);
+    const rec = new UndoRecorder(ctx, userId);
+    await rec.patch("weekly_tasks", id, { color });
+    await rec.commit(color ? "Set color" : "Clear color");
+  },
+});
+
 export const setHabitTag = mutation({
   args: {
     id: v.id("weekly_tasks"),
