@@ -66,15 +66,15 @@ const DAY_FULL = [
 ];
 const DAY_SHORT = ["Sun", "Mon", "Tue", "Wed", "Thu", "Fri", "Sat"];
 
-const TIMELINE_START_MIN = 6 * 60; // 06:00
+const TIMELINE_START_MIN = 8 * 60; // 08:00
 const TIMELINE_END_MIN = 23 * 60; // 23:00
 const TIMELINE_SPAN_MIN = TIMELINE_END_MIN - TIMELINE_START_MIN;
-// Google-Calendar-style row height. 1.4 px/min → 84px/hour, comfortable for
-// 30-minute blocks to be readable without crowding.
-const PX_PER_MIN = 1.4;
+// 1.8 px/min → 108px/hour. Roomy enough that 45-min blocks render
+// title + time, and 30-min blocks aren't cramped.
+const PX_PER_MIN = 1.8;
 const HOUR_PX = 60 * PX_PER_MIN;
 const TIMELINE_HEIGHT_PX = TIMELINE_SPAN_MIN * PX_PER_MIN;
-const HOURS = Array.from({ length: 18 }, (_, i) => 6 + i); // 06..23
+const HOURS = Array.from({ length: 16 }, (_, i) => 8 + i); // 08..23
 
 const TABS = [
   { id: "today", label: "Today", icon: "solar:sun-2-bold-duotone" },
@@ -398,7 +398,9 @@ function CalendarEvent({
   const height = Math.max(22, heightRaw - 6);
   const widthPct = 100 / event.totalCols;
   const leftPct = event.col * widthPct;
-  const isShort = heightRaw < 36;
+  // Below ~65px (≈ 30-min block at 1.8 px/min) only the title fits;
+  // larger blocks render title + time.
+  const isShort = heightRaw < 65;
   const time = `${fmtMin(event.startMin)}–${fmtMin(event.endMin)}`;
   return (
     <button
@@ -565,7 +567,7 @@ function DayCalendar({
   const scrollRef = useRef(null);
   useEffect(() => {
     if (scrollRef.current) {
-      scrollRef.current.scrollTop = (7 - 6) * HOUR_PX - 12;
+      scrollRef.current.scrollTop = 0;
     }
   }, []);
   return (
@@ -606,7 +608,7 @@ function WeekCalendar({
   const scrollRef = useRef(null);
   useEffect(() => {
     if (scrollRef.current) {
-      scrollRef.current.scrollTop = (7 - 6) * HOUR_PX - 12;
+      scrollRef.current.scrollTop = 0;
     }
   }, []);
   // Mon–Sat only. Sundays are intentionally omitted from the week view —
