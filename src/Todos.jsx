@@ -5704,7 +5704,6 @@ function TaskRow({
   }
   if (isLifting) {
     rowStyle.zIndex = 50;
-    rowStyle.boxShadow = "0 14px 32px rgba(0,0,0,0.18)";
     rowStyle.userSelect = "none";
   }
   const colorBg = colorHex
