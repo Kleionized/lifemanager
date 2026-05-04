@@ -19,6 +19,10 @@ const BLOCK_VALIDATOR = v.object({
   d: v.string(),
 });
 
+// Bump whenever the canonical schedule / lecture seed changes in a way
+// that should auto-propagate to existing plans. Stored on plans.seedVersion.
+const CURRENT_SEED_VERSION = 1;
+
 // ─────────────── Canonical seed data ───────────────
 // Block titles are intentionally generic ("Startup block" not "LNAT —
 // talk to one user") so the schedule doesn't dictate what to do inside
@@ -200,6 +204,7 @@ export const ensureTrinitySeed = mutation({
       phaseShiftWeek: 5,
       examWeek: 8,
       goalLinks: {},
+      seedVersion: CURRENT_SEED_VERSION,
       active: true,
       createdAt: Date.now(),
     });
@@ -285,6 +290,7 @@ export const resetTrinityDefaults = mutation({
         blocks: SEED_LECTURES[dow],
       });
     }
+    await ctx.db.patch(planId, { seedVersion: CURRENT_SEED_VERSION });
   },
 });
 
@@ -299,6 +305,7 @@ export const updatePlan = mutation({
     phaseShiftWeek: v.optional(v.number()),
     examWeek: v.optional(v.number()),
     phaseOverride: v.optional(v.string()),
+    seedVersion: v.optional(v.number()),
   },
   handler: async (ctx, { id, ...rest }) => {
     const userId = await requireUserId(ctx);
@@ -311,6 +318,7 @@ export const updatePlan = mutation({
       "phaseShiftWeek",
       "examWeek",
       "phaseOverride",
+      "seedVersion",
     ] as const) {
       if (rest[k] !== undefined) patch[k] = rest[k];
     }

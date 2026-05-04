@@ -2915,10 +2915,20 @@ export default function PlanView({ planSubView, setPlanSubView, bundle, goals })
   // 30 min) we know they're from an older seed. Run resetDefaults once
   // to bring the data current. Tracking, energy choices, rules, and
   // goal links are preserved by the reset mutation.
+  // CURRENT_SEED_VERSION mirrors the constant in convex/plans.ts.
+  // Plans whose row already records this version skip the auto-reset
+  // entirely — no per-mount calendar flash from a redundant reset.
+  // Older plans (or plans missing seedVersion) get one reset OR a
+  // backfill, depending on whether stale markers are detected.
+  const CURRENT_SEED_VERSION = 1;
   const autoResetRef = useRef(false);
   useEffect(() => {
     if (autoResetRef.current) return;
-    if (!bundle?.schedules || !bundle?.lectures) return;
+    if (!bundle?.plan || !bundle?.schedules || !bundle?.lectures) return;
+    if ((bundle.plan.seedVersion ?? 0) >= CURRENT_SEED_VERSION) {
+      autoResetRef.current = true;
+      return;
+    }
     const STALE_TITLES = new Set([
       "Reading",
       "Light revision",
@@ -2932,28 +2942,30 @@ export default function PlanView({ planSubView, setPlanSubView, bundle, goals })
           (b.t === "Breakfast" && toMin(b.e) - toMin(b.s) > 30)
       )
     );
-    // High-essay used to have only one Essay block. The current seed
-    // has two. Anything fewer means stale.
     const highEssay = bundle.schedules.find(
       (s) => s.energy === "high" && s.phase === "essay"
     );
     const essayCount =
       highEssay?.blocks?.filter((b) => b.c === "essays").length ?? 0;
     const staleHighEssay = !!highEssay && essayCount < 2;
-    // Wednesday's lecture row used to include a morning Psych Lecture
-    // that didn't actually exist on the user's real schedule. Tuesday
-    // similarly had a phantom Stats Lecture — only Psych meets on Tue.
     const wedRow = bundle.lectures.find((l) => l.dow === 3);
     const tueRow = bundle.lectures.find((l) => l.dow === 2);
     const staleLectures =
       (wedRow?.blocks?.some((b) => b.t === "Psych Lecture") ?? false) ||
       (tueRow?.blocks?.some((b) => b.t === "Stats Lecture") ?? false);
+    autoResetRef.current = true;
     if (staleSchedule || staleLectures || staleHighEssay) {
-      autoResetRef.current = true;
       mut.resetDefaults({ planId: bundle.plan._id });
+    } else {
+      // Data already matches the current seed but the row was never
+      // stamped. Backfill seedVersion so the next mount short-circuits.
+      mut.updatePlan({
+        id: bundle.plan._id,
+        seedVersion: CURRENT_SEED_VERSION,
+      });
     }
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [bundle?.schedules?.length, bundle?.lectures?.length]);
+  }, [bundle?.plan?.seedVersion, bundle?.schedules?.length, bundle?.lectures?.length]);
 
   // Pop the energy picker if today doesn't have a row yet.
   const todayIso = isoDate(todayDate);

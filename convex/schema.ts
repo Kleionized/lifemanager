@@ -132,6 +132,11 @@ export default defineSchema({
     examWeek: v.optional(v.number()), // week N is exam week (red)
     phaseOverride: v.optional(v.string()), // "auto" | "essay" | "revision"
     goalLinks: v.optional(v.any()), // { [categoryId]: goalId }
+    // Bumped on the client whenever the canonical seed evolves. Once
+    // stamped equal to CURRENT_SEED_VERSION, the auto-reset effect on
+    // load is a no-op — keeps the calendar from re-rendering after
+    // every mount.
+    seedVersion: v.optional(v.number()),
     active: v.boolean(),
     createdAt: v.number(),
   }).index("by_user", ["userId"]),
