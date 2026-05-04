@@ -2260,6 +2260,35 @@ export default function PlanView({ planSubView, setPlanSubView, bundle, goals })
   const todayDate = useMemo(() => new Date(), [tick]);
   const nowMin = todayDate.getHours() * 60 + todayDate.getMinutes();
 
+  // One-shot auto-migration: if the schedules contain pre-2026-05-04
+  // titles ("Reading", "Light revision", or any "Breakfast" longer than
+  // 30 min) we know they're from an older seed. Run resetDefaults once
+  // to bring the data current. Tracking, energy choices, rules, and
+  // goal links are preserved by the reset mutation.
+  const autoResetRef = useRef(false);
+  useEffect(() => {
+    if (autoResetRef.current) return;
+    if (!bundle?.schedules) return;
+    const STALE_TITLES = new Set([
+      "Reading",
+      "Light revision",
+      "Long, slow breakfast",
+      "Slow, comforting breakfast",
+    ]);
+    const isStale = bundle.schedules.some((s) =>
+      s.blocks?.some(
+        (b) =>
+          STALE_TITLES.has(b.t) ||
+          (b.t === "Breakfast" && toMin(b.e) - toMin(b.s) > 30)
+      )
+    );
+    if (isStale) {
+      autoResetRef.current = true;
+      mut.resetDefaults({ planId: bundle.plan._id });
+    }
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [bundle?.schedules?.length]);
+
   // Pop the energy picker if today doesn't have a row yet.
   const todayIso = isoDate(todayDate);
   const todayRow = bundle.days.find((d) => d.date === todayIso);
