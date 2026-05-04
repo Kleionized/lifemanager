@@ -2708,6 +2708,14 @@ export default function PlanView({ planSubView, setPlanSubView, bundle, goals })
           (b.t === "Breakfast" && toMin(b.e) - toMin(b.s) > 30)
       )
     );
+    // High-essay used to have only one Essay block. The current seed
+    // has two. Anything fewer means stale.
+    const highEssay = bundle.schedules.find(
+      (s) => s.energy === "high" && s.phase === "essay"
+    );
+    const essayCount =
+      highEssay?.blocks?.filter((b) => b.c === "essays").length ?? 0;
+    const staleHighEssay = !!highEssay && essayCount < 2;
     // Wednesday's lecture row used to include a morning Psych Lecture
     // that didn't actually exist on the user's real schedule. Tuesday
     // similarly had a phantom Stats Lecture — only Psych meets on Tue.
@@ -2716,7 +2724,7 @@ export default function PlanView({ planSubView, setPlanSubView, bundle, goals })
     const staleLectures =
       (wedRow?.blocks?.some((b) => b.t === "Psych Lecture") ?? false) ||
       (tueRow?.blocks?.some((b) => b.t === "Stats Lecture") ?? false);
-    if (staleSchedule || staleLectures) {
+    if (staleSchedule || staleLectures || staleHighEssay) {
       autoResetRef.current = true;
       mut.resetDefaults({ planId: bundle.plan._id });
     }

@@ -40,7 +40,7 @@ const SEED_SCHEDULES: { energy: string; phase: string; blocks: any[] }[] = [
       { s: "09:00", e: "10:30", t: "Finals block", c: "finals", d: "90m" },
       { s: "10:30", e: "12:00", t: "Essay block", c: "essays", d: "90m" },
       { s: "12:00", e: "13:00", t: "Lunch", c: "life", d: "60m" },
-      { s: "13:00", e: "14:30", t: "Startup block", c: "lnat", d: "90m" },
+      { s: "13:00", e: "14:30", t: "Essay block", c: "essays", d: "90m" },
       { s: "14:30", e: "15:00", t: "Power nap", c: "rest", d: "30m" },
       { s: "15:00", e: "16:00", t: "Finals review", c: "finals", d: "60m" },
       { s: "16:00", e: "17:00", t: "Gym", c: "fitness", d: "60m" },
