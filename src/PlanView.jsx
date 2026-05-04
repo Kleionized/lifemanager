@@ -3,7 +3,7 @@
 // loaded by the parent. Custom-built liquid-glass calendar, gantt, and
 // stats components — nothing here is a CSS port from the source HTML.
 
-import { useEffect, useMemo, useRef, useState } from "react";
+import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { Icon } from "@iconify/react";
 import { useMutation } from "convex/react";
 import { api } from "../convex/_generated/api";
@@ -392,6 +392,8 @@ function CalendarEvent({
   status,
   isNow,
   onClick,
+  onMouseDown,
+  isDragged,
 }) {
   const top = (event.startMin - TIMELINE_START_MIN) * PX_PER_MIN + 2;
   const heightRaw = (event.endMin - event.startMin) * PX_PER_MIN;
@@ -405,7 +407,10 @@ function CalendarEvent({
   return (
     <button
       type="button"
-      onClick={onClick}
+      // When onMouseDown handles drag-vs-click, skip onClick — the
+      // handler dispatches it itself based on movement threshold.
+      onClick={onMouseDown ? undefined : onClick}
+      onMouseDown={onMouseDown}
       className={["plan-event", isNow ? "is-now" : ""].join(" ")}
       data-status={status?.status || ""}
       style={{
@@ -414,6 +419,8 @@ function CalendarEvent({
         left: `calc(${leftPct}% + 3px)`,
         width: `calc(${widthPct}% - 8px)`,
         textAlign: "left",
+        opacity: isDragged ? 0.25 : undefined,
+        cursor: onMouseDown ? (isDragged ? "grabbing" : "grab") : "pointer",
         ...categoryStyleFor(event.c),
       }}
       title={`${event.t} · ${time}`}
@@ -506,10 +513,21 @@ function DayColumn({
   nowMin,
   currentEvent,
   onEventClick,
+  onEventMouseDown,
+  draggedSourceDateIso,
+  draggedSourceBlockKey,
+  registerColumnRef,
 }) {
   const dateIso = isoDate(date);
   const dom = String(date.getDate());
   const dayLabel = DAY_SHORT[date.getDay()];
+  const gridRef = useRef(null);
+  useEffect(() => {
+    if (registerColumnRef) registerColumnRef(dateIso, gridRef.current);
+    return () => {
+      if (registerColumnRef) registerColumnRef(dateIso, null);
+    };
+  }, [dateIso, registerColumnRef]);
   return (
     <div className="relative min-w-0 border-l border-black/10 dark:border-white/10 first:border-l-0">
       <DayHeader
@@ -519,6 +537,8 @@ function DayColumn({
         isToday={isToday}
       />
       <div
+        ref={gridRef}
+        data-date={dateIso}
         className="relative"
         style={{
           height: `${TIMELINE_HEIGHT_PX}px`,
@@ -537,6 +557,9 @@ function DayColumn({
             const status = trackingForDate?.get(blockKey(ev));
             const isNow =
               isToday && currentEvent && blockKey(currentEvent) === blockKey(ev);
+            const isDragged =
+              draggedSourceDateIso === dateIso &&
+              draggedSourceBlockKey === blockKey(ev);
             return (
               <CalendarEvent
                 key={blockKey(ev)}
@@ -544,6 +567,12 @@ function DayColumn({
                 status={status}
                 isNow={isNow}
                 onClick={() => onEventClick(ev, dateIso)}
+                onMouseDown={
+                  onEventMouseDown
+                    ? (e) => onEventMouseDown(e, ev, dateIso)
+                    : undefined
+                }
+                isDragged={isDragged}
               />
             );
           })
@@ -603,6 +632,7 @@ function WeekCalendar({
   nowMin,
   currentEvent,
   onEventClick,
+  onEventMove,
   todayIso,
 }) {
   const scrollRef = useRef(null);
@@ -623,10 +653,95 @@ function WeekCalendar({
     }
     return out;
   }, [monday, bundle]);
+
+  // colElsRef maps dateIso → the column's grid <div>. Used during drag
+  // for cursor hit-testing and time-offset math.
+  const colElsRef = useRef({});
+  const registerColumnRef = useCallback((iso, el) => {
+    if (el) colElsRef.current[iso] = el;
+    else delete colElsRef.current[iso];
+  }, []);
+  const [drag, setDrag] = useState(null);
+
+  const handleEventMouseDown = (e, ev, sourceDateIso) => {
+    if (e.button !== 0) return;
+    if (!onEventMove) {
+      onEventClick(ev, sourceDateIso);
+      return;
+    }
+    e.preventDefault();
+    const evRect = e.currentTarget.getBoundingClientRect();
+    const grabOffsetY = e.clientY - evRect.top;
+    const startX = e.clientX;
+    const startY = e.clientY;
+    const sourceBlockKey = blockKey(ev);
+    const dur = ev.endMin - ev.startMin;
+    let dragging = false;
+    let lastDrag = null;
+
+    const onMove = (me) => {
+      if (!dragging) {
+        if (Math.hypot(me.clientX - startX, me.clientY - startY) < 4) return;
+        dragging = true;
+        document.body.style.userSelect = "none";
+        document.body.style.cursor = "grabbing";
+      }
+      let targetDateIso = sourceDateIso;
+      let targetRect = null;
+      for (const [iso, el] of Object.entries(colElsRef.current)) {
+        if (!el) continue;
+        const rect = el.getBoundingClientRect();
+        if (me.clientX >= rect.left && me.clientX <= rect.right) {
+          targetDateIso = iso;
+          targetRect = rect;
+          break;
+        }
+      }
+      if (!targetRect) {
+        const fb = colElsRef.current[sourceDateIso];
+        if (fb) targetRect = fb.getBoundingClientRect();
+      }
+      if (!targetRect) return;
+      const yInColumn = me.clientY - targetRect.top - grabOffsetY;
+      const rawMin = yInColumn / PX_PER_MIN + TIMELINE_START_MIN;
+      const snapped = Math.round(rawMin / 15) * 15;
+      const newStart = Math.max(
+        TIMELINE_START_MIN,
+        Math.min(TIMELINE_END_MIN - dur, snapped)
+      );
+      lastDrag = {
+        ev,
+        sourceDateIso,
+        sourceBlockKey,
+        targetDateIso,
+        targetStartMin: newStart,
+        targetRect,
+      };
+      setDrag(lastDrag);
+    };
+    const onUp = () => {
+      document.removeEventListener("mousemove", onMove);
+      document.removeEventListener("mouseup", onUp);
+      document.body.style.userSelect = "";
+      document.body.style.cursor = "";
+      if (dragging && lastDrag) {
+        const moved =
+          lastDrag.targetDateIso !== lastDrag.sourceDateIso ||
+          lastDrag.targetStartMin !== ev.startMin;
+        if (moved) onEventMove(lastDrag);
+      } else {
+        onEventClick(ev, sourceDateIso);
+      }
+      setDrag(null);
+    };
+    document.addEventListener("mousemove", onMove);
+    document.addEventListener("mouseup", onUp);
+  };
+
   return (
     <div
       ref={scrollRef}
-      className="overflow-auto border-t border-black/10 dark:border-white/10 -mx-10 -mt-3"
+      className="overflow-auto border-t border-black/10 dark:border-white/10 -mx-10 -mt-3 relative"
       style={{ height: "calc(100vh - 6rem)" }}
     >
       <div
@@ -649,9 +764,49 @@ function WeekCalendar({
               nowMin={nowMin}
               currentEvent={currentEvent}
               onEventClick={onEventClick}
+              onEventMouseDown={handleEventMouseDown}
+              draggedSourceDateIso={drag?.sourceDateIso}
+              draggedSourceBlockKey={drag?.sourceBlockKey}
+              registerColumnRef={registerColumnRef}
             />
           ))}
         </div>
+      </div>
+      {drag && <DragPreview drag={drag} />}
+    </div>
+  );
+}
+
+// Floating preview rendered with `position: fixed` so it stays anchored
+// to the viewport while the user drags. Snapped to the target column +
+// 15-minute time slot.
+function DragPreview({ drag }) {
+  if (!drag?.targetRect) return null;
+  const { ev, targetStartMin, targetRect } = drag;
+  const dur = ev.endMin - ev.startMin;
+  const top =
+    targetRect.top + (targetStartMin - TIMELINE_START_MIN) * PX_PER_MIN;
+  const height = Math.max(22, dur * PX_PER_MIN - 6);
+  return (
+    <div
+      className="plan-event"
+      style={{
+        position: "fixed",
+        top: `${top + 2}px`,
+        left: `${targetRect.left + 6}px`,
+        width: `${targetRect.width - 16}px`,
+        height: `${height}px`,
+        zIndex: 1000,
+        pointerEvents: "none",
+        outline: "2px solid rgba(0, 122, 255, 0.65)",
+        outlineOffset: "1px",
+        opacity: 0.94,
+        ...categoryStyleFor(ev.c),
+      }}
+    >
+      <div className="plan-event-title font-medium truncate">{ev.t}</div>
+      <div className="text-[11px] opacity-75 truncate mt-0.5">
+        {fmtMin(targetStartMin)}–{fmtMin(targetStartMin + dur)}
       </div>
     </div>
   );
@@ -1240,7 +1395,7 @@ function TodayView({ bundle, goals, todayDate, nowMin, openTracking, mut }) {
 
 // ──────────────── Week view ────────────────
 
-function WeekView({ bundle, todayDate, nowMin, openTracking }) {
+function WeekView({ bundle, todayDate, nowMin, openTracking, onEventMove }) {
   const todayIso = isoDate(todayDate);
   const monday = mondayOf(todayDate);
   const sortedItems = useMemo(() => {
@@ -1264,6 +1419,7 @@ function WeekView({ bundle, todayDate, nowMin, openTracking }) {
       nowMin={nowMin}
       currentEvent={currentEvent}
       onEventClick={(ev, dateIso) => openTracking(ev, dateIso)}
+      onEventMove={onEventMove}
       todayIso={todayIso}
     />
   );
@@ -2677,6 +2833,74 @@ export default function PlanView({ planSubView, setPlanSubView, bundle, goals })
     }
   };
 
+  // Drag-and-drop in the Week view always writes per-date overrides.
+  // Moving a block reflects a one-off rearrangement of that day, not
+  // a permanent edit to the schedule template — if the user wants the
+  // template changed, they edit-block in the modal.
+  const computeEffectiveBlocks = (dateIso, isLecture) => {
+    const dRow = bundle.days.find((d) => d.date === dateIso);
+    const date = parseISO(dateIso);
+    const dow = date.getDay();
+    if (isLecture) {
+      if (dRow?.lectureOverride) return [...dRow.lectureOverride];
+      const lec = bundle.lectures.find((l) => l.dow === dow);
+      return lec?.blocks ? [...lec.blocks] : [];
+    }
+    if (dRow?.scheduleOverride) return [...dRow.scheduleOverride];
+    const energy = dRow?.energy || defaultEnergyFor(bundle.plan, date);
+    if (NO_BLOCKS_ENERGIES.has(energy)) return [];
+    const phase = effectivePhaseFor(bundle.plan, date);
+    const sched = scheduleFor(bundle.schedules, energy, phase);
+    return sched?.blocks ? [...sched.blocks] : [];
+  };
+
+  const commitMove = (dragData) => {
+    const { ev, sourceDateIso, targetDateIso, targetStartMin } = dragData;
+    const src = ev._source;
+    if (!src) return;
+    const isLecture =
+      src.kind === "lecture" || src.kind === "lectureOverride";
+    const dur = ev.endMin - ev.startMin;
+    const newBlock = {
+      s: fmtMin(targetStartMin),
+      e: fmtMin(targetStartMin + dur),
+      t: ev.t,
+      c: ev.c,
+      d: `${dur}m`,
+    };
+    const matches = (b) =>
+      b.s === src.origS &&
+      b.e === src.origE &&
+      b.t === src.origT &&
+      b.c === src.origC;
+
+    if (sourceDateIso === targetDateIso) {
+      // Same-day move — replace the block in place.
+      const blocks = computeEffectiveBlocks(sourceDateIso, isLecture).map(
+        (b) => (matches(b) ? newBlock : b)
+      );
+      const fn = isLecture
+        ? mut.setDayLectureOverride
+        : mut.setDayScheduleOverride;
+      fn({ planId: bundle.plan._id, date: sourceDateIso, blocks });
+      return;
+    }
+    // Cross-day move — remove from source's effective blocks, append
+    // to target's effective blocks.
+    const sourceBlocks = computeEffectiveBlocks(sourceDateIso, isLecture).filter(
+      (b) => !matches(b)
+    );
+    const targetBlocks = [
+      ...computeEffectiveBlocks(targetDateIso, isLecture),
+      newBlock,
+    ];
+    const fn = isLecture
+      ? mut.setDayLectureOverride
+      : mut.setDayScheduleOverride;
+    fn({ planId: bundle.plan._id, date: sourceDateIso, blocks: sourceBlocks });
+    fn({ planId: bundle.plan._id, date: targetDateIso, blocks: targetBlocks });
+  };
+
   // Re-render tick — drives the now-line and now-card every minute.
   const [tick, setTick] = useState(0);
   useEffect(() => {
@@ -2787,6 +3011,7 @@ export default function PlanView({ planSubView, setPlanSubView, bundle, goals })
           todayDate={todayDate}
           nowMin={nowMin}
           openTracking={openTracking}
+          onEventMove={commitMove}
         />
       )}
       {planSubView === "term" && (
