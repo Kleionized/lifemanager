@@ -815,7 +815,7 @@ function EnergyPicker({ open, onClose, onPick, suggestedId, dayLabel }) {
       onClick={onClose}
     >
       <div
-        className="lg-card rounded-2xl p-6 max-w-md w-full"
+        className="lg-modal rounded-2xl p-6 max-w-md w-full"
         onClick={(e) => e.stopPropagation()}
       >
         <h3 className="text-base font-semibold">How are you today?</h3>
@@ -834,7 +834,7 @@ function EnergyPicker({ open, onClose, onPick, suggestedId, dayLabel }) {
                 key={l.id}
                 onClick={() => onPick(l.id)}
                 className={[
-                  "lg-task rounded-xl px-3 py-3 text-left transition-all",
+                  "lg-modal-btn rounded-xl px-3 py-3 text-left transition-all",
                   isSuggested ? "ring-1 ring-blue-500/50" : "",
                 ].join(" ")}
               >
@@ -914,7 +914,7 @@ function TrackingModal({
       onClick={onClose}
     >
       <div
-        className="lg-card rounded-2xl p-6 max-w-md w-full"
+        className="lg-modal rounded-2xl p-6 max-w-md w-full"
         onClick={(e) => e.stopPropagation()}
       >
         {mode === "track" ? (
@@ -935,10 +935,10 @@ function TrackingModal({
                     key={s.id}
                     onClick={() => onSet(s.id)}
                     className={[
-                      "px-3 py-2 rounded-md text-sm font-medium border transition-all",
+                      "px-3 py-2 rounded-md text-sm font-medium transition-all",
                       active
-                        ? s.cls
-                        : "lg-task border-transparent text-neutral-700 dark:text-neutral-300",
+                        ? `border ${s.cls}`
+                        : "lg-modal-btn text-neutral-700 dark:text-neutral-300",
                     ].join(" ")}
                   >
                     {s.label}
@@ -950,7 +950,7 @@ function TrackingModal({
               <div className="flex gap-2">
                 {canEdit && (
                   <button
-                    className="px-3 py-1.5 rounded-md text-xs text-neutral-600 dark:text-neutral-300 lg-task"
+                    className="lg-modal-btn px-3 py-1.5 rounded-md text-xs text-neutral-600 dark:text-neutral-300"
                     onClick={() => setMode("edit")}
                   >
                     Edit block
@@ -1033,7 +1033,7 @@ function TrackingModal({
             </div>
 
             {sessionScope === null && (
-              <div className="lg-task rounded-md p-3 mt-4">
+              <div className="lg-modal-btn rounded-md p-3 mt-4">
                 <div className="text-xs font-medium text-neutral-700 dark:text-neutral-200 mb-2">
                   Apply this change to:
                 </div>
