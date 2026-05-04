@@ -5495,6 +5495,7 @@ function DraggableTaskList({ items, renderItem }) {
         didDrag = true;
         document.body.style.userSelect = "none";
         document.body.style.cursor = "grabbing";
+        document.body.classList.add("tasks-dragging");
         try {
           window.getSelection()?.removeAllRanges();
         } catch {
@@ -5532,6 +5533,7 @@ function DraggableTaskList({ items, renderItem }) {
       document.removeEventListener("mouseup", onUp);
       document.body.style.userSelect = "";
       document.body.style.cursor = "";
+      document.body.classList.remove("tasks-dragging");
       if (didDrag) {
         const swallow = (ce) => {
           ce.preventDefault();

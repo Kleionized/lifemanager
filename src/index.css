@@ -102,7 +102,12 @@
     0 1px 0 rgba(255, 255, 255, 0.95) inset,
     0 0 0 0.5px rgba(0, 0, 0, 0.05),
     inset 0 0 32px rgba(255, 255, 255, 0.18);
-  transition: all 150ms ease-out;
+  /* Scoped to the hover-changing properties only — keeping `all` here
+     made backdrop-filter swaps animate over 150ms, which read as a
+     pulse whenever the .tasks-dragging override toggled the blur on
+     and off. */
+  transition: background 150ms ease-out, border-color 150ms ease-out,
+    box-shadow 150ms ease-out;
 }
 
 .lg-task:hover {
@@ -146,6 +151,18 @@
 .dark .lg-task-done {
   background: rgba(255, 255, 255, 0.02);
   border: 1px solid rgba(255, 255, 255, 0.05);
+}
+
+/* During an active drag, suspend backdrop-filter on every task row.
+   The combination of backdrop-blur + per-frame transform updates
+   forces the browser to re-rasterize each row's blurred backdrop on
+   every mousemove tick — visible as a global shrink-and-expand
+   flash. With .lg-task's transition scoped (no longer `all`), this
+   override snaps without animation in either direction. */
+.tasks-dragging .lg-task,
+.tasks-dragging .lg-task-done {
+  backdrop-filter: none !important;
+  -webkit-backdrop-filter: none !important;
 }
 
 
