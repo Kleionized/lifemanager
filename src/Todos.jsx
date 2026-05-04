@@ -1,4 +1,4 @@
-import { useEffect, useMemo, useRef, useState } from "react";
+import { Fragment, useEffect, useMemo, useRef, useState } from "react";
 import { Icon } from "@iconify/react";
 import { useAuthActions } from "@convex-dev/auth/react";
 import {
@@ -83,6 +83,23 @@ const TYPE_ICON_COLOR = {
   project: "text-blue-500 dark:text-blue-400",
   goal: "text-violet-500 dark:text-violet-400",
 };
+
+// Color tags for daily tasks. The hex is used inline for the row's
+// left-edge accent (CSS-class-name approach doesn't work — Tailwind
+// only generates classes it sees literally in source). Keep this
+// list in sync with the picker UI in TaskRow.
+const TASK_COLORS = [
+  { id: "blue", label: "Blue", hex: "#3b82f6" },
+  { id: "emerald", label: "Green", hex: "#10b981" },
+  { id: "amber", label: "Amber", hex: "#f59e0b" },
+  { id: "rose", label: "Rose", hex: "#f43f5e" },
+  { id: "violet", label: "Violet", hex: "#8b5cf6" },
+  { id: "teal", label: "Teal", hex: "#14b8a6" },
+  { id: "slate", label: "Slate", hex: "#64748b" },
+];
+const TASK_COLOR_HEX = Object.fromEntries(
+  TASK_COLORS.map((c) => [c.id, c.hex])
+);
 
 const PROJECT_ICONS = [
   "target",
@@ -749,6 +766,17 @@ function bindTask(task, parentPath, handlers) {
     onSchedule: handlers.schedule
       ? (dateIso) => handlers.schedule(path, dateIso)
       : undefined,
+    // Top-level only (parentPath empty) — moveTo and setColor flow
+    // through the task id, not a path. Subtasks keep arrow-button
+    // reordering and don't get color tagging for now.
+    onMoveTo:
+      parentPath.length === 0 && handlers.moveTo
+        ? (targetIndex) => handlers.moveTo(task.id, targetIndex)
+        : undefined,
+    onSetColor:
+      parentPath.length === 0 && handlers.setColor
+        ? (color) => handlers.setColor(task.id, color)
+        : undefined,
     children: (task.children || []).map((c) => bindTask(c, path, handlers)),
   };
 }
@@ -761,6 +789,7 @@ export default function Todos() {
   const { state, ready, ui: serverUi } = data;
   const {
     addDaily, addDailyChild, addAtDaily, toggleDaily, updateDaily, deleteDaily,
+    reorderDailyTo, setDailyColor,
     addWeekly, addWeeklyChild, addAtWeekly, toggleWeekly, updateWeekly, deleteWeekly,
     addProject, deleteProject, updateProjectTitle, cycleProjectType, setProjectIcon,
     addWeek, deleteWeek, addProjectTask, addProjectTaskChild, addAtProjectTask,
@@ -1126,6 +1155,8 @@ export default function Todos() {
     delete: deleteDaily,
     addChild: addDailyChild,
     addAt: addAtDaily,
+    moveTo: reorderDailyTo,
+    setColor: setDailyColor,
   };
   const weeklyHandlersFor = (day) => ({
     toggle: toggleWeekly,
@@ -1755,6 +1786,62 @@ function TodayView({
   toggleCollapsed,
   expandId,
 }) {
+  // Drag-and-drop reordering of top-level items.
+  const rowRefsRef = useRef({});
+  const registerRowRef = (id) => (el) => {
+    if (el) rowRefsRef.current[id] = el;
+    else delete rowRefsRef.current[id];
+  };
+  const [drag, setDrag] = useState(null);
+  // drag = null | { itemId, fromIndex, targetIndex }
+
+  const onDragHandleMouseDown = (e, item, fromIndex) => {
+    if (e.button !== 0 || !item.onMoveTo) return;
+    e.preventDefault();
+    const startY = e.clientY;
+    let dragging = false;
+    let lastTarget = fromIndex;
+
+    const onMove = (me) => {
+      if (!dragging) {
+        if (Math.abs(me.clientY - startY) < 4) return;
+        dragging = true;
+        document.body.style.userSelect = "none";
+        document.body.style.cursor = "grabbing";
+      }
+      // Hit-test rows by midpoint to decide target index.
+      let targetIndex = items.length;
+      for (let i = 0; i < items.length; i++) {
+        const el = rowRefsRef.current[items[i].id];
+        if (!el) continue;
+        const rect = el.getBoundingClientRect();
+        const mid = rect.top + rect.height / 2;
+        if (me.clientY < mid) {
+          targetIndex = i;
+          break;
+        }
+      }
+      // The dragged item gets removed before re-insertion, so its
+      // own slot doesn't count when computing the destination.
+      const adjusted = targetIndex > fromIndex ? targetIndex - 1 : targetIndex;
+      lastTarget = Math.max(0, Math.min(items.length - 1, adjusted));
+      setDrag({ itemId: item.id, fromIndex, targetIndex: lastTarget });
+    };
+    const onUp = () => {
+      document.removeEventListener("mousemove", onMove);
+      document.removeEventListener("mouseup", onUp);
+      document.body.style.userSelect = "";
+      document.body.style.cursor = "";
+      if (dragging && lastTarget !== fromIndex) {
+        item.onMoveTo(lastTarget);
+      }
+      setDrag(null);
+    };
+
+    document.addEventListener("mousemove", onMove);
+    document.addEventListener("mouseup", onUp);
+  };
+
   return (
     <div className="max-w-4xl mx-auto">
       <PageHeader
@@ -1774,24 +1861,38 @@ function TodayView({
         </div>
       ) : (
         <ul>
-          {items.map((item) => (
-            <TaskRow
-              key={item.id}
-              item={item}
-              editingId={editingId}
-              setEditingId={setEditingId}
-              onToggle={item.onToggle}
-              onUpdate={item.onUpdate}
-              onDelete={item.onDelete}
-              onAddChild={item.onAddChild}
-              onAddSibling={item.onAddSibling}
-              onReorder={item.onReorder}
-              onSchedule={item.onSchedule}
-              collapsedIds={collapsedIds}
-              toggleCollapsed={toggleCollapsed}
-              expandId={expandId}
-            />
+          {items.map((item, idx) => (
+            <Fragment key={item.id}>
+              {drag && drag.targetIndex === idx && drag.itemId !== item.id && (
+                <li className="h-[3px] -my-0.5 rounded-full bg-blue-500/70" />
+              )}
+              <TaskRow
+                item={item}
+                editingId={editingId}
+                setEditingId={setEditingId}
+                onToggle={item.onToggle}
+                onUpdate={item.onUpdate}
+                onDelete={item.onDelete}
+                onAddChild={item.onAddChild}
+                onAddSibling={item.onAddSibling}
+                onReorder={item.onReorder}
+                onSchedule={item.onSchedule}
+                onDragHandleMouseDown={
+                  item.onMoveTo
+                    ? (e) => onDragHandleMouseDown(e, item, idx)
+                    : undefined
+                }
+                registerRowRef={registerRowRef(item.id)}
+                isDragging={drag?.itemId === item.id}
+                collapsedIds={collapsedIds}
+                toggleCollapsed={toggleCollapsed}
+                expandId={expandId}
+              />
+            </Fragment>
           ))}
+          {drag && drag.targetIndex === items.length - 1 && drag.fromIndex !== items.length - 1 && (
+            <li className="h-[3px] -my-0.5 rounded-full bg-blue-500/70" />
+          )}
         </ul>
       )}
       <div className="lg-add mt-4 rounded-xl px-4 py-3">
@@ -4491,6 +4592,58 @@ function IconPicker({ value, iconColor, onSelect, onClose }) {
   );
 }
 
+function ColorPicker({ value, onPick, onClose }) {
+  return (
+    <>
+      <div
+        className="fixed inset-0 z-30"
+        onClick={onClose}
+        aria-hidden="true"
+      />
+      <div className="absolute z-40 top-full right-0 mt-1.5 rounded-xl p-2.5 grid grid-cols-4 gap-1 w-[176px] bg-white dark:bg-neutral-900 border border-black/10 dark:border-white/10 shadow-xl">
+        <button
+          onClick={() => onPick(null)}
+          className={[
+            "w-9 h-9 rounded-lg flex items-center justify-center transition-all duration-150",
+            !value
+              ? "bg-[#007AFF]/15 ring-1 ring-[#007AFF]/30"
+              : "hover:bg-black/[0.05] dark:hover:bg-white/[0.06]",
+          ].join(" ")}
+          aria-label="No color"
+          aria-pressed={!value}
+        >
+          <Icon
+            icon="solar:close-circle-linear"
+            className="w-4 h-4 text-neutral-400 dark:text-neutral-500"
+          />
+        </button>
+        {TASK_COLORS.map((c) => {
+          const selected = value === c.id;
+          return (
+            <button
+              key={c.id}
+              onClick={() => onPick(c.id)}
+              className={[
+                "w-9 h-9 rounded-lg flex items-center justify-center transition-all duration-150",
+                selected
+                  ? "bg-[#007AFF]/15 ring-1 ring-[#007AFF]/30"
+                  : "hover:bg-black/[0.05] dark:hover:bg-white/[0.06]",
+              ].join(" ")}
+              aria-label={c.label}
+              aria-pressed={selected}
+            >
+              <span
+                className="block w-4 h-4 rounded-full ring-1 ring-black/15 dark:ring-white/15"
+                style={{ background: c.hex }}
+              />
+            </button>
+          );
+        })}
+      </div>
+    </>
+  );
+}
+
 function WeekRow({
   week,
   weekIndex,
@@ -5143,6 +5296,9 @@ function TaskRow({
   onAddSibling,
   onReorder,
   onSchedule,
+  onDragHandleMouseDown,
+  registerRowRef,
+  isDragging,
   compact,
   topLevelOnly = false,
   collapsedIds,
@@ -5158,6 +5314,15 @@ function TaskRow({
   }
   const editing = editingId === item.id;
   const [addingChild, setAddingChild] = useState(false);
+  const [colorPickerOpen, setColorPickerOpen] = useState(false);
+  const liRef = useRef(null);
+  useEffect(() => {
+    if (registerRowRef) registerRowRef(liRef.current);
+    return () => {
+      if (registerRowRef) registerRowRef(null);
+    };
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, []);
   const hasChildren =
     !topLevelOnly && item.children && item.children.length > 0;
   const canAddChild = !topLevelOnly && depth < 2 && !!onAddChild;
@@ -5168,6 +5333,7 @@ function TaskRow({
   const childSz = TASK_SIZES[childSizeKind];
   const childrenVisible = hasChildren && !isCollapsed;
   const showsChildren = childrenVisible || addingChild;
+  const colorHex = item.color ? TASK_COLOR_HEX[item.color] : null;
   // Only the TodayView's top-level rows control their own gap to the next task —
   // compact day-column tasks use the parent <ul>'s space-y for tight stacking.
   const liSpacing =
@@ -5177,18 +5343,39 @@ function TaskRow({
 
   return (
     <li
+      ref={liRef}
       className={[
-        "transition-[margin-bottom] duration-200 ease-out",
+        "transition-[margin-bottom,opacity] duration-200 ease-out",
         liSpacing,
+        isDragging ? "opacity-30" : "",
       ].join(" ")}
     >
       <div
         className={[
-          "group flex items-center gap-2.5 rounded-lg",
+          "group flex items-center gap-2.5 rounded-lg relative",
           sz.row,
           item.done ? "lg-task-done opacity-60" : "lg-task",
         ].join(" ")}
+        style={
+          colorHex
+            ? { boxShadow: `inset 4px 0 0 ${colorHex}` }
+            : undefined
+        }
       >
+        {onDragHandleMouseDown && (
+          <button
+            type="button"
+            onMouseDown={onDragHandleMouseDown}
+            aria-label="Drag to reorder"
+            className="flex-none opacity-0 group-hover:opacity-100 text-neutral-400 dark:text-neutral-500 hover:text-neutral-700 dark:hover:text-neutral-200 transition-opacity duration-150 -ml-1"
+            style={{ cursor: isDragging ? "grabbing" : "grab" }}
+          >
+            <Icon
+              icon="solar:hamburger-menu-linear"
+              className={sz.trash}
+            />
+          </button>
+        )}
         {showChevron ? (
           <button
             onClick={() => toggleCollapsed(item.id)}
@@ -5274,6 +5461,32 @@ function TaskRow({
           >
             <Plus className={sz.plus} />
           </button>
+        )}
+        {item.onSetColor && (
+          <div className="flex-none relative">
+            <button
+              onClick={() => setColorPickerOpen((s) => !s)}
+              className="flex-none opacity-0 group-hover:opacity-100 transition-opacity duration-150"
+              aria-label="Color"
+            >
+              <span
+                className="block w-3.5 h-3.5 rounded-full ring-1 ring-black/15 dark:ring-white/15"
+                style={{
+                  background: colorHex || "transparent",
+                }}
+              />
+            </button>
+            {colorPickerOpen && (
+              <ColorPicker
+                value={item.color}
+                onPick={(c) => {
+                  item.onSetColor(c);
+                  setColorPickerOpen(false);
+                }}
+                onClose={() => setColorPickerOpen(false)}
+              />
+            )}
+          </div>
         )}
         <button
           onClick={onDelete}

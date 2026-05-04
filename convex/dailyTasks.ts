@@ -157,6 +157,57 @@ export const remove = mutation({
   },
 });
 
+// Reorder a task to a specific zero-based position within its sibling
+// group (same parentId). Used by the Today view's drag-and-drop
+// reordering. No-op if the target index resolves to the row's current
+// position.
+export const reorderTo = mutation({
+  args: {
+    id: v.id("daily_tasks"),
+    targetIndex: v.number(),
+  },
+  handler: async (ctx, { id, targetIndex }) => {
+    const userId = await requireUserId(ctx);
+    const task = await getOwned<Doc<"daily_tasks">>(ctx, id, userId);
+    const all = await ctx.db
+      .query("daily_tasks")
+      .withIndex("by_user", (q) => q.eq("userId", userId))
+      .collect();
+    const group = all
+      .filter((t) => (t.parentId ?? undefined) === (task.parentId ?? undefined))
+      .sort((a, b) => a.order - b.order);
+    const fromIdx = group.findIndex((t) => t._id === id);
+    if (fromIdx === -1) return;
+    const clamped = Math.max(0, Math.min(group.length - 1, targetIndex));
+    if (fromIdx === clamped) return;
+    const reordered = [...group];
+    const [moved] = reordered.splice(fromIdx, 1);
+    reordered.splice(clamped, 0, moved);
+    const rec = new UndoRecorder(ctx, userId);
+    for (let i = 0; i < reordered.length; i++) {
+      if (reordered[i].order !== i) {
+        await rec.patch("daily_tasks", reordered[i]._id, { order: i });
+      }
+    }
+    await rec.commit("Reorder task");
+  },
+});
+
+// Set / clear the color tag on a task. Pass color=undefined to clear.
+export const setColor = mutation({
+  args: {
+    id: v.id("daily_tasks"),
+    color: v.optional(v.string()),
+  },
+  handler: async (ctx, { id, color }) => {
+    const userId = await requireUserId(ctx);
+    await getOwned(ctx, id, userId);
+    const rec = new UndoRecorder(ctx, userId);
+    await rec.patch("daily_tasks", id, { color });
+    await rec.commit(color ? "Set color" : "Clear color");
+  },
+});
+
 export const setHabitTag = mutation({
   args: {
     id: v.id("daily_tasks"),

@@ -23,6 +23,9 @@ export default defineSchema({
     parentId: v.optional(v.id("daily_tasks")),
     order: v.number(),
     habitId: v.optional(v.id("habits")),
+    // Optional color tag — one of the keys in TASK_COLOR_PALETTE on the
+    // client. Tints the row's left border.
+    color: v.optional(v.string()),
     createdAt: v.number(),
   })
     .index("by_user", ["userId"])

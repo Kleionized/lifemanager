@@ -31,6 +31,7 @@ function nestTasks(flat) {
       done: c.done,
       createdAt: c.createdAt,
       habitId: c.habitId || null,
+      color: c.color || null,
       day: c.day,
       date: c.date || null,
       order: c.order ?? 0,
@@ -224,6 +225,8 @@ export function useDataLayer() {
     );
   });
   const mSetDailyHabitTag = useMutation(api.dailyTasks.setHabitTag);
+  const mReorderToDaily = useMutation(api.dailyTasks.reorderTo);
+  const mSetDailyColor = useMutation(api.dailyTasks.setColor);
 
   // Weekly
   const mAddWeekly = useMutation(api.weeklyTasks.add);
@@ -437,6 +440,10 @@ export function useDataLayer() {
     if (!id) return;
     mDeleteDaily({ id });
   };
+  const reorderDailyTo = (id, targetIndex) =>
+    mReorderToDaily({ id, targetIndex });
+  const setDailyColor = (id, color) =>
+    mSetDailyColor({ id, color: color || undefined });
 
   // Weekly
   const addWeekly = (title, day) => {
@@ -688,6 +695,8 @@ export function useDataLayer() {
     toggleDaily,
     updateDaily,
     deleteDaily,
+    reorderDailyTo,
+    setDailyColor,
     // weekly
     addWeekly,
     addWeeklyChild,
