@@ -5683,7 +5683,7 @@ function TaskRow({
   const liSpacing =
     !compact && depth === 0
       ? showsChildren
-        ? "mt-5 mb-5 first:mt-0"
+        ? "mt-5 mb-5"
         : "mb-2"
       : "";
   const showChevron = !!toggleCollapsed && hasChildren;
