@@ -406,20 +406,19 @@ export function useDataLayer() {
 
   // ── Mutator API (matches Todos.jsx existing names) ───────────────
 
-  // Daily
+  // Daily — every adder returns Promise<id> so the caller can await
+  // the new row's id and immediately enter edit mode on it.
   const addDaily = (title) => {
     const t = (title || "").trim();
-    if (!t) return;
-    mAddDaily({ title: t });
+    if (!t) return mAddDaily({ title: "" });
+    return mAddDaily({ title: t });
   };
   const addDailyChild = (parentPath, title) => {
     const t = (title || "").trim();
-    if (!t) return;
-    mAddDaily({ title: t, parentId: leafId(parentPath) });
+    return mAddDaily({ title: t, parentId: leafId(parentPath) });
   };
-  const addAtDaily = (parentPath = []) => {
+  const addAtDaily = (parentPath = []) =>
     mAddDaily({ title: "", parentId: leafId(parentPath) });
-  };
   const toggleDaily = (path) => {
     const id = leafId(path);
     if (!id) return;
@@ -448,23 +447,21 @@ export function useDataLayer() {
   // Weekly
   const addWeekly = (title, day) => {
     const t = (title || "").trim();
-    if (!t) return;
     const d = day || todayKey();
-    mAddWeekly({ title: t, day: d });
+    return mAddWeekly({ title: t, day: d });
   };
   const addWeeklyChild = (parentPath, title) => {
     const t = (title || "").trim();
-    if (!t) return;
     const parentId = leafId(parentPath);
     const parent = parentId ? findWeeklyTaskFlat(parentId) : null;
     const day = parent?.day || todayKey();
-    mAddWeekly({ title: t, day, parentId });
+    return mAddWeekly({ title: t, day, parentId });
   };
   const addAtWeekly = (parentPath, day) => {
     const parentId = leafId(parentPath);
     const parent = parentId ? findWeeklyTaskFlat(parentId) : null;
     const d = parent?.day || day || todayKey();
-    mAddWeekly({ title: "", day: d, parentId });
+    return mAddWeekly({ title: "", day: d, parentId });
   };
   const toggleWeekly = (path) => {
     const id = leafId(path);
@@ -536,25 +533,30 @@ export function useDataLayer() {
 
   const addProjectDatedTask = (projectId, date, title) => {
     const t = (title || "").trim();
-    if (!t) return;
-    mAddProjectTask({ projectId, title: t, date: date || undefined });
+    return mAddProjectTask({
+      projectId,
+      title: t,
+      date: date || undefined,
+    });
   };
   const addProjectDatedTaskChild = (projectId, parentPath, title) => {
     const t = (title || "").trim();
-    if (!t) return;
-    mAddProjectTask({ projectId, title: t, parentId: leafId(parentPath) });
+    return mAddProjectTask({
+      projectId,
+      title: t,
+      parentId: leafId(parentPath),
+    });
   };
   const addAtProjectDatedTask = (projectId, parentPath, dateForRoot) => {
     const parentId = leafId(parentPath);
     if (parentId) {
-      mAddProjectTask({ projectId, title: "", parentId });
-    } else {
-      mAddProjectTask({
-        projectId,
-        title: "",
-        date: dateForRoot || undefined,
-      });
+      return mAddProjectTask({ projectId, title: "", parentId });
     }
+    return mAddProjectTask({
+      projectId,
+      title: "",
+      date: dateForRoot || undefined,
+    });
   };
   const toggleProjectDatedTask = (projectId, path) => {
     const id = leafId(path);

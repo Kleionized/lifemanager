@@ -550,6 +550,29 @@ function countDirect(items) {
   return { done, total: items.length };
 }
 
+// Count leaf "step" units beneath a top-level task. A step with no
+// sub-steps counts as 1; a step with sub-steps contributes its sub-step
+// count. Tasks with zero direct children return total=0.
+function countLeafSteps(task) {
+  const steps = task.children || [];
+  if (steps.length === 0) return { done: 0, total: 0 };
+  let done = 0;
+  let total = 0;
+  for (const s of steps) {
+    const subs = s.children || [];
+    if (subs.length === 0) {
+      total += 1;
+      if (s.done) done += 1;
+    } else {
+      for (const ss of subs) {
+        total += 1;
+        if (ss.done) done += 1;
+      }
+    }
+  }
+  return { done, total };
+}
+
 function countWeek(week) {
   let done = 0;
   let total = 0;
@@ -819,6 +842,10 @@ export default function Todos() {
   const [collapsedIds, setCollapsedIds] = useState(() => new Set());
   const [loaded, setLoaded] = useState(false);
   const [editingId, setEditingId] = useState(null);
+  // Track the most recently edited top-level task id and step id
+  // (depth 1) so Cmd+2 / Cmd+3 know where to append.
+  const lastTaskIdRef = useRef(null);
+  const lastStepIdRef = useRef(null);
   const [migrationStatus, setMigrationStatus] = useState(null);
 
   const dailyAddRef = useRef(null);
@@ -1158,6 +1185,58 @@ export default function Todos() {
     moveTo: reorderDailyTo,
     setColor: setDailyColor,
   };
+
+  // When the editing target changes, snapshot the most-recently-edited
+  // task / step IDs so the Cmd+2 / Cmd+3 hotkeys know where to append.
+  useEffect(() => {
+    if (!editingId) return;
+    for (const t of state.daily) {
+      if (t.id === editingId) {
+        lastTaskIdRef.current = t.id;
+        return;
+      }
+      for (const s of t.children || []) {
+        if (s.id === editingId) {
+          lastTaskIdRef.current = t.id;
+          lastStepIdRef.current = s.id;
+          return;
+        }
+      }
+    }
+  }, [editingId, state.daily]);
+
+  // Cmd/Ctrl + 1/2/3 hotkeys for adding tasks/steps/sub-steps with
+  // immediate edit-mode focus. Active only on the Today view.
+  useEffect(() => {
+    const handler = async (e) => {
+      const mod = e.metaKey || e.ctrlKey;
+      if (!mod) return;
+      if (view.type !== "daily") return;
+      // Skip if inside an input/textarea where digits are valid input.
+      const tag = e.target.tagName;
+      if (tag === "INPUT" || tag === "TEXTAREA") return;
+      if (e.key === "1") {
+        e.preventDefault();
+        const newId = await addAtDaily([]);
+        if (newId) setEditingId(newId);
+      } else if (e.key === "2") {
+        const taskId = lastTaskIdRef.current;
+        if (!taskId) return;
+        e.preventDefault();
+        const newId = await addAtDaily([taskId]);
+        if (newId) setEditingId(newId);
+      } else if (e.key === "3") {
+        const taskId = lastTaskIdRef.current;
+        const stepId = lastStepIdRef.current;
+        if (!taskId || !stepId) return;
+        e.preventDefault();
+        const newId = await addAtDaily([taskId, stepId]);
+        if (newId) setEditingId(newId);
+      }
+    };
+    window.addEventListener("keydown", handler);
+    return () => window.removeEventListener("keydown", handler);
+  }, [view, addAtDaily]);
   const weeklyHandlersFor = (day) => ({
     toggle: toggleWeekly,
     update: updateWeekly,
@@ -1431,6 +1510,9 @@ export default function Todos() {
                 dayRefSetters={weeklyDayRefSetters}
                 mode={weeklyMode}
                 setMode={setWeeklyMode}
+                collapsedIds={collapsedIds}
+                toggleCollapsed={toggleCollapsed}
+                expandId={expandId}
               />
             )}
             {displayView.type === "project" &&
@@ -1915,7 +1997,22 @@ function WeekView({
   dayRefSetters,
   mode,
   setMode,
+  collapsedIds,
+  toggleCollapsed,
+  expandId,
 }) {
+  const [detailItem, setDetailItem] = useState(null);
+  // Re-resolve the displayed item from the latest tree so toggles /
+  // edits made inside the modal reflect immediately. The bound items
+  // are recomputed each render of the parent, so we look up by id.
+  const liveDetail = useMemo(() => {
+    if (!detailItem) return null;
+    for (const arr of Object.values(weeklyItemsByDay)) {
+      const found = arr.find((t) => t.id === detailItem.id);
+      if (found) return found;
+    }
+    return null;
+  }, [detailItem, weeklyItemsByDay]);
   const subtitle = `${formatShortDate(weekDates[0].date)} – ${formatShortDate(
     weekDates[6].date
   )}`;
@@ -1957,6 +2054,7 @@ function WeekView({
           setEditingId={setEditingId}
           onAdd={onAdd}
           dayRefSetters={dayRefSetters}
+          onOpenDetail={setDetailItem}
         />
       ) : (
         <DayGrid>
@@ -1974,11 +2072,21 @@ function WeekView({
                 setEditingId={setEditingId}
                 onAdd={(t) => onAdd(t, key)}
                 addRef={dayRefSetters[key]}
+                onOpenDetail={setDetailItem}
               />
             );
           })}
         </DayGrid>
       )}
+      <TaskDetailModal
+        item={liveDetail}
+        editingId={editingId}
+        setEditingId={setEditingId}
+        collapsedIds={collapsedIds}
+        toggleCollapsed={toggleCollapsed}
+        expandId={expandId}
+        onClose={() => setDetailItem(null)}
+      />
     </div>
   );
 }
@@ -2016,6 +2124,7 @@ function DayStack({
   setEditingId,
   onAdd,
   dayRefSetters,
+  onOpenDetail,
 }) {
   return (
     <div className="grid grid-cols-[repeat(7,minmax(180px,1fr))] gap-3">
@@ -2078,6 +2187,7 @@ function DayStack({
                   onAddSibling={item.onAddSibling}
                   onReorder={item.onReorder}
                   onSchedule={item.onSchedule}
+                  onOpenDetail={onOpenDetail}
                   compact
                   topLevelOnly
                 />
@@ -4592,6 +4702,66 @@ function IconPicker({ value, iconColor, onSelect, onClose }) {
   );
 }
 
+// Full-tree detail popup for a single weekly task. Renders a TaskRow
+// without `topLevelOnly`, so steps and sub-steps appear with the same
+// editing affordances as Today.
+function TaskDetailModal({
+  item,
+  editingId,
+  setEditingId,
+  collapsedIds,
+  toggleCollapsed,
+  expandId,
+  onClose,
+}) {
+  if (!item) return null;
+  return (
+    <div
+      className="fixed inset-0 z-[100] bg-black/40 backdrop-blur-sm flex items-center justify-center p-4"
+      onClick={onClose}
+    >
+      <div
+        className="lg-modal rounded-2xl p-6 max-w-lg w-full max-h-[80vh] overflow-y-auto"
+        onClick={(e) => e.stopPropagation()}
+      >
+        <div className="flex items-center justify-between mb-1">
+          <h3 className="text-base font-semibold">Task</h3>
+          <button
+            onClick={onClose}
+            className="text-xs text-neutral-500 hover:text-neutral-900 dark:hover:text-neutral-100"
+          >
+            Close
+          </button>
+        </div>
+        <p className="text-xs text-neutral-500 dark:text-neutral-400 mb-3">
+          Click any title to rename. Steps and sub-steps editable
+          like Today.
+        </p>
+        <ul>
+          <TaskRow
+            item={item}
+            editingId={editingId}
+            setEditingId={setEditingId}
+            onToggle={item.onToggle}
+            onUpdate={item.onUpdate}
+            onDelete={() => {
+              item.onDelete();
+              onClose();
+            }}
+            onAddChild={item.onAddChild}
+            onAddSibling={item.onAddSibling}
+            onReorder={item.onReorder}
+            onSchedule={item.onSchedule}
+            collapsedIds={collapsedIds}
+            toggleCollapsed={toggleCollapsed}
+            expandId={expandId}
+          />
+        </ul>
+      </div>
+    </div>
+  );
+}
+
 function ColorPicker({ value, onPick, onClose }) {
   return (
     <>
@@ -4758,6 +4928,7 @@ function DayColumn({
   setEditingId,
   onAdd,
   addRef,
+  onOpenDetail,
   compact,
 }) {
   const dayProgress = countDirect(items);
@@ -4825,6 +4996,7 @@ function DayColumn({
             onAddSibling={item.onAddSibling}
             onReorder={item.onReorder}
             onSchedule={item.onSchedule}
+            onOpenDetail={onOpenDetail}
             compact
             topLevelOnly
           />
@@ -5299,6 +5471,7 @@ function TaskRow({
   onDragHandleMouseDown,
   registerRowRef,
   isDragging,
+  onOpenDetail,
   compact,
   topLevelOnly = false,
   collapsedIds,
@@ -5334,6 +5507,15 @@ function TaskRow({
   const childrenVisible = hasChildren && !isCollapsed;
   const showsChildren = childrenVisible || addingChild;
   const colorHex = item.color ? TASK_COLOR_HEX[item.color] : null;
+  // In weekly-grid mode (topLevelOnly), show a count of completed leaf
+  // steps next to the row so the user can see progress without
+  // expanding. Steps with sub-steps contribute their sub-step count;
+  // steps without sub-steps count as a single leaf.
+  const leafCount = useMemo(() => {
+    if (!topLevelOnly) return null;
+    const c = countLeafSteps(item);
+    return c.total > 0 ? c : null;
+  }, [item, topLevelOnly]);
   // Only the TodayView's top-level rows control their own gap to the next task —
   // compact day-column tasks use the parent <ul>'s space-y for tight stacking.
   const liSpacing =
@@ -5403,7 +5585,11 @@ function TaskRow({
           title={item.title}
           done={item.done}
           editing={editing}
-          onStartEdit={() => setEditingId(item.id)}
+          onStartEdit={
+            onOpenDetail
+              ? () => onOpenDetail(item)
+              : () => setEditingId(item.id)
+          }
           onSave={(v) => {
             setEditingId(null);
             if (v.trim() !== item.title) onUpdate(v);
@@ -5411,8 +5597,8 @@ function TaskRow({
           onCancel={() => setEditingId(null)}
           onCommitNext={
             onAddSibling
-              ? () => {
-                  const newId = onAddSibling();
+              ? async () => {
+                  const newId = await onAddSibling();
                   if (newId) setEditingId(newId);
                 }
               : undefined
@@ -5420,7 +5606,7 @@ function TaskRow({
           textClass={sz.text}
           depth={depth}
         />
-        {onReorder && (
+        {onReorder && !onDragHandleMouseDown && (
           <div className="flex-none flex items-center -mr-1 opacity-0 group-hover:opacity-100 transition-all duration-150">
             <button
               onClick={() => onReorder(-1)}
@@ -5461,6 +5647,18 @@ function TaskRow({
           >
             <Plus className={sz.plus} />
           </button>
+        )}
+        {leafCount && (
+          <span
+            className={[
+              "flex-none text-[10px] tabular-nums",
+              leafCount.done === leafCount.total
+                ? "text-emerald-600 dark:text-emerald-400"
+                : "text-neutral-400 dark:text-neutral-500",
+            ].join(" ")}
+          >
+            {leafCount.done}/{leafCount.total}
+          </span>
         )}
         {item.onSetColor && (
           <div className="flex-none relative">
