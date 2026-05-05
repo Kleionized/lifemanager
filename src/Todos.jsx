@@ -5229,7 +5229,15 @@ function InlineTitle({
           if (e.key === "Enter") {
             e.preventDefault();
             const trimmed = draft.trim();
-            if (trimmed && onCommitNext) {
+            if (!trimmed) {
+              // Empty Enter — just exit edit mode without saving.
+              // Avoids the auto-delete behavior where clearing a
+              // task title and pressing Enter would route through
+              // updateDaily's empty-string-deletes branch.
+              onCancel();
+              return;
+            }
+            if (onCommitNext) {
               onSave(draft);
               onCommitNext();
             } else {
@@ -5244,6 +5252,12 @@ function InlineTitle({
         onBlur={() => {
           if (skipBlurRef.current) {
             skipBlurRef.current = false;
+            return;
+          }
+          // Same protection on blur — leave the row alone if the
+          // user clears it and clicks away.
+          if (!draft.trim()) {
+            onCancel();
             return;
           }
           onSave(draft);
@@ -5292,8 +5306,16 @@ function SubstepInput({ onSubmit, onCancel, compact, textClass }) {
       onKeyDown={(e) => {
         if (e.key === "Enter") {
           e.preventDefault();
-          if (value.trim()) onSubmit(value);
-          else onCancel();
+          const v = value.trim();
+          if (!v) {
+            onCancel();
+            return;
+          }
+          // Submit, clear the input, keep it focused so the user can
+          // type the next step right away. Closing happens only on
+          // empty Enter, Escape, or Blur.
+          onSubmit(value);
+          setValue("");
         } else if (e.key === "Escape") {
           e.preventDefault();
           skipBlurRef.current = true;
@@ -5306,7 +5328,7 @@ function SubstepInput({ onSubmit, onCancel, compact, textClass }) {
           return;
         }
         if (value.trim()) onSubmit(value);
-        else onCancel();
+        onCancel();
       }}
       placeholder="Add a substep…"
       className={[
@@ -5953,10 +5975,7 @@ function TaskRow({
                     ].join(" ")}
                   />
                   <SubstepInput
-                    onSubmit={(t) => {
-                      onAddChild(t);
-                      setAddingChild(false);
-                    }}
+                    onSubmit={(t) => onAddChild(t)}
                     onCancel={() => setAddingChild(false)}
                     textClass={childSz.text}
                   />
