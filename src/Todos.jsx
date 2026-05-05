@@ -5189,6 +5189,7 @@ function InlineTitle({
   onSave,
   onCancel,
   onCommitNext,
+  onCommitChild,
   compact,
   textClass,
   depth = 0,
@@ -5237,7 +5238,17 @@ function InlineTitle({
               onCancel();
               return;
             }
-            if (onCommitNext) {
+            // Cmd/Ctrl+Enter saves the current row and creates a
+            // CHILD one level deeper (task → step, step → sub-step,
+            // etc.) instead of a sibling.
+            if (e.metaKey || e.ctrlKey) {
+              if (onCommitChild) {
+                onSave(draft);
+                onCommitChild();
+              } else {
+                onSave(draft);
+              }
+            } else if (onCommitNext) {
               onSave(draft);
               onCommitNext();
             } else {
@@ -5810,6 +5821,20 @@ function TaskRow({
             onAddSibling
               ? async () => {
                   const newId = await onAddSibling();
+                  if (newId) setEditingId(newId);
+                }
+              : undefined
+          }
+          onCommitChild={
+            onAddChild
+              ? async () => {
+                  // Cmd+Enter — create an empty child one level
+                  // deeper and focus it. Also expand this row so
+                  // the new child is visible if the parent was
+                  // collapsed. onAddChild returns the mutation
+                  // promise which resolves with the new id.
+                  if (expandId) expandId(item.id);
+                  const newId = await onAddChild("");
                   if (newId) setEditingId(newId);
                 }
               : undefined
