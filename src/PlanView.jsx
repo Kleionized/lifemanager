@@ -592,6 +592,7 @@ function DayCalendar({
   nowMin,
   currentEvent,
   onEventClick,
+  onEventMove,
 }) {
   const scrollRef = useRef(null);
   useEffect(() => {
@@ -599,10 +600,79 @@ function DayCalendar({
       scrollRef.current.scrollTop = 0;
     }
   }, []);
+  // Same drag-to-move setup as WeekCalendar but limited to one column.
+  // Cross-day moves aren't reachable from the day view; everything
+  // ends up as a same-day reposition that goes through commitMove.
+  const colElsRef = useRef({});
+  const registerColumnRef = useCallback((iso, el) => {
+    if (el) colElsRef.current[iso] = el;
+    else delete colElsRef.current[iso];
+  }, []);
+  const [drag, setDrag] = useState(null);
+
+  const handleEventMouseDown = (e, ev, sourceDateIso) => {
+    if (e.button !== 0) return;
+    if (!onEventMove) {
+      onEventClick(ev, sourceDateIso);
+      return;
+    }
+    e.preventDefault();
+    const evRect = e.currentTarget.getBoundingClientRect();
+    const grabOffsetY = e.clientY - evRect.top;
+    const startX = e.clientX;
+    const startY = e.clientY;
+    const sourceBlockKey = blockKey(ev);
+    const dur = ev.endMin - ev.startMin;
+    let dragging = false;
+    let lastDrag = null;
+
+    const onMove = (me) => {
+      if (!dragging) {
+        if (Math.hypot(me.clientX - startX, me.clientY - startY) < 4) return;
+        dragging = true;
+        document.body.style.userSelect = "none";
+        document.body.style.cursor = "grabbing";
+      }
+      const colEl = colElsRef.current[sourceDateIso];
+      if (!colEl) return;
+      const targetRect = colEl.getBoundingClientRect();
+      const yInColumn = me.clientY - targetRect.top - grabOffsetY;
+      const rawMin = yInColumn / PX_PER_MIN + TIMELINE_START_MIN;
+      const snapped = Math.round(rawMin / 15) * 15;
+      const newStart = Math.max(
+        TIMELINE_START_MIN,
+        Math.min(TIMELINE_END_MIN - dur, snapped)
+      );
+      lastDrag = {
+        ev,
+        sourceDateIso,
+        sourceBlockKey,
+        targetDateIso: sourceDateIso,
+        targetStartMin: newStart,
+        targetRect,
+      };
+      setDrag(lastDrag);
+    };
+    const onUp = () => {
+      document.removeEventListener("mousemove", onMove);
+      document.removeEventListener("mouseup", onUp);
+      document.body.style.userSelect = "";
+      document.body.style.cursor = "";
+      if (dragging && lastDrag) {
+        if (lastDrag.targetStartMin !== ev.startMin) onEventMove(lastDrag);
+      } else {
+        onEventClick(ev, sourceDateIso);
+      }
+      setDrag(null);
+    };
+    document.addEventListener("mousemove", onMove);
+    document.addEventListener("mouseup", onUp);
+  };
+
   return (
     <div
       ref={scrollRef}
-      className="overflow-auto border-t border-black/10 dark:border-white/10 -mx-10"
+      className="overflow-auto border-t border-black/10 dark:border-white/10 -mx-10 relative"
       style={{ height: "calc(100vh - 7rem)" }}
     >
       <div
@@ -619,8 +689,13 @@ function DayCalendar({
           nowMin={nowMin}
           currentEvent={currentEvent}
           onEventClick={onEventClick}
+          onEventMouseDown={onEventMove ? handleEventMouseDown : undefined}
+          draggedSourceDateIso={drag?.sourceDateIso}
+          draggedSourceBlockKey={drag?.sourceBlockKey}
+          registerColumnRef={registerColumnRef}
         />
       </div>
+      {drag && <DragPreview drag={drag} />}
     </div>
   );
 }
@@ -1311,7 +1386,7 @@ function TrackingModal({
 
 // ──────────────── Today view ────────────────
 
-function TodayView({ bundle, goals, todayDate, nowMin, openTracking, mut }) {
+function TodayView({ bundle, goals, todayDate, nowMin, openTracking, mut, onEventMove }) {
   const todayIso = isoDate(todayDate);
   const dayRow = bundle.days.find((d) => d.date === todayIso);
   const energy = dayRow?.energy || defaultEnergyFor(bundle.plan, todayDate);
@@ -1387,6 +1462,7 @@ function TodayView({ bundle, goals, todayDate, nowMin, openTracking, mut }) {
           nowMin={nowMin}
           currentEvent={currentEvent}
           onEventClick={(ev, dateIso) => openTracking(ev, dateIso)}
+          onEventMove={onEventMove}
         />
       )}
     </div>
@@ -3015,6 +3091,7 @@ export default function PlanView({ planSubView, setPlanSubView, bundle, goals })
           nowMin={nowMin}
           openTracking={openTracking}
           mut={mut}
+          onEventMove={commitMove}
         />
       )}
       {planSubView === "week" && (
