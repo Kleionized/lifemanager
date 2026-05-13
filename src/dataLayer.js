@@ -35,6 +35,8 @@ function nestTasks(flat) {
       createdAt: c.createdAt,
       habitId: c.habitId || null,
       color: c.color || null,
+      deadline: c.deadline || null,
+      projectId: c.projectId || null,
       day: c.day,
       date: c.date || null,
       order: c.order ?? 0,
@@ -263,6 +265,8 @@ export function useDataLayer() {
     );
   });
   const mSetDailyColor = useMutation(api.dailyTasks.setColor);
+  const mSetDailyDeadline = useMutation(api.dailyTasks.setDeadline);
+  const mSetDailyProject = useMutation(api.dailyTasks.setProject);
 
   // Weekly
   const mAddWeekly = useMutation(api.weeklyTasks.add);
@@ -344,6 +348,8 @@ export function useDataLayer() {
     );
   });
   const mSetWeeklyColor = useMutation(api.weeklyTasks.setColor);
+  const mSetWeeklyDeadline = useMutation(api.weeklyTasks.setDeadline);
+  const mSetWeeklyProject = useMutation(api.weeklyTasks.setProject);
 
   // Projects
   const mAddProject = useMutation(api.projects.add);
@@ -511,6 +517,10 @@ export function useDataLayer() {
     mReorderToDaily({ id, targetIndex });
   const setDailyColor = (id, color) =>
     mSetDailyColor({ id, color: color || undefined });
+  const setDailyDeadline = (id, deadline) =>
+    mSetDailyDeadline({ id, deadline: deadline || undefined });
+  const setDailyProject = (id, projectId) =>
+    mSetDailyProject({ id, projectId: projectId || undefined });
 
   // Weekly
   const addWeekly = (title, day) => {
@@ -559,6 +569,10 @@ export function useDataLayer() {
     mReorderToWeekly({ id, targetIndex });
   const setWeeklyColor = (id, color) =>
     mSetWeeklyColor({ id, color: color || undefined });
+  const setWeeklyDeadline = (id, deadline) =>
+    mSetWeeklyDeadline({ id, deadline: deadline || undefined });
+  const setWeeklyProject = (id, projectId) =>
+    mSetWeeklyProject({ id, projectId: projectId || undefined });
 
   // Projects
   const addProject = (type) => {
@@ -771,6 +785,8 @@ export function useDataLayer() {
     deleteDaily,
     reorderDailyTo,
     setDailyColor,
+    setDailyDeadline,
+    setDailyProject,
     // weekly
     addWeekly,
     addWeeklyChild,
@@ -780,6 +796,8 @@ export function useDataLayer() {
     deleteWeekly,
     reorderWeeklyTo,
     setWeeklyColor,
+    setWeeklyDeadline,
+    setWeeklyProject,
     // projects
     addProject,
     deleteProject,

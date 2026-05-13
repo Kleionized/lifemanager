@@ -802,6 +802,12 @@ function bindTask(task, parentPath, handlers) {
     onSetColor: handlers.setColor
       ? (color) => handlers.setColor(task.id, color)
       : undefined,
+    onSetDeadline: handlers.setDeadline
+      ? (iso) => handlers.setDeadline(task.id, iso)
+      : undefined,
+    onSetProject: handlers.setProject
+      ? (projectId) => handlers.setProject(task.id, projectId)
+      : undefined,
     children: (task.children || []).map((c) => bindTask(c, path, handlers)),
   };
 }
@@ -814,9 +820,9 @@ export default function Todos() {
   const { state, ready, ui: serverUi } = data;
   const {
     addDaily, addDailyChild, addAtDaily, toggleDaily, updateDaily, deleteDaily,
-    reorderDailyTo, setDailyColor,
+    reorderDailyTo, setDailyColor, setDailyDeadline, setDailyProject,
     addWeekly, addWeeklyChild, addAtWeekly, toggleWeekly, updateWeekly, deleteWeekly,
-    reorderWeeklyTo, setWeeklyColor,
+    reorderWeeklyTo, setWeeklyColor, setWeeklyDeadline, setWeeklyProject,
     addProject, deleteProject, updateProjectTitle, cycleProjectType, setProjectIcon,
     addWeek, deleteWeek, addProjectTask, addProjectTaskChild, addAtProjectTask,
     toggleProjectTask, updateProjectTaskTitle, deleteProjectTask,
@@ -1186,6 +1192,8 @@ export default function Todos() {
     addAt: addAtDaily,
     moveTo: reorderDailyTo,
     setColor: setDailyColor,
+    setDeadline: setDailyDeadline,
+    setProject: setDailyProject,
   };
 
   // When the editing target changes, snapshot the most-recently-edited
@@ -1250,6 +1258,8 @@ export default function Todos() {
     addAt: (parentPath) => addAtWeekly(parentPath, day),
     moveTo: reorderWeeklyTo,
     setColor: setWeeklyColor,
+    setDeadline: setWeeklyDeadline,
+    setProject: setWeeklyProject,
   });
   // Legacy goal handlers — week-bucketed shape.
   const projectHandlersFor = (projectId, weekId, day) => ({
@@ -4723,6 +4733,68 @@ function TaskDetailModal({
   );
 }
 
+// Small "due Mar 15" / "Today" / "Overdue 2d" chip rendered when a
+// task has a deadline. Color reflects urgency (overdue=red, ≤7d=red,
+// ≤21d=amber, else neutral). Click clears the deadline.
+function DeadlineChip({ deadline, onClear, sz }) {
+  const label = formatTimeRemaining(deadline);
+  const tone = timeRemainingTone(deadline);
+  if (!label) return null;
+  const toneClass =
+    tone === "overdue" || tone === "red"
+      ? "bg-rose-500/15 text-rose-700 dark:text-rose-300 border-rose-500/30"
+      : tone === "amber"
+        ? "bg-amber-500/15 text-amber-700 dark:text-amber-300 border-amber-500/30"
+        : "bg-neutral-500/10 text-neutral-600 dark:text-neutral-300 border-neutral-500/20";
+  return (
+    <button
+      type="button"
+      onClick={onClear}
+      title={onClear ? `Due ${deadline} · click to clear` : `Due ${deadline}`}
+      className={[
+        "flex-none border rounded-md px-1.5 py-0.5 text-[10px] tabular-nums",
+        toneClass,
+      ].join(" ")}
+    >
+      {label}
+    </button>
+  );
+}
+
+// Calendar icon button next to color/delete. Opens a native date
+// picker; on change, dispatches the new ISO date to onChange.
+function DeadlineButton({ value, onChange, sz }) {
+  const inputRef = useRef(null);
+  return (
+    <div className="flex-none relative">
+      <button
+        type="button"
+        onClick={() => {
+          // showPicker() is widely supported on modern browsers;
+          // fall back to focusing the (hidden) input so the user can
+          // open the picker via UI.
+          const el = inputRef.current;
+          if (!el) return;
+          if (typeof el.showPicker === "function") el.showPicker();
+          else el.focus();
+        }}
+        aria-label="Set deadline"
+        className="flex-none opacity-0 group-hover:opacity-100 text-neutral-400 hover:text-neutral-700 dark:text-neutral-500 dark:hover:text-neutral-200 transition-opacity duration-150"
+      >
+        <Icon icon="solar:calendar-add-linear" className={sz.trash} />
+      </button>
+      <input
+        ref={inputRef}
+        type="date"
+        value={value || ""}
+        onChange={(e) => onChange(e.target.value || null)}
+        className="absolute left-0 top-0 w-0 h-0 opacity-0 pointer-events-none"
+        tabIndex={-1}
+      />
+    </div>
+  );
+}
+
 function ColorPicker({ value, onPick, onClose }) {
   return (
     <>
@@ -5190,6 +5262,7 @@ function InlineTitle({
   onCancel,
   onCommitNext,
   onCommitChild,
+  onDelete,
   compact,
   textClass,
   depth = 0,
@@ -5197,9 +5270,14 @@ function InlineTitle({
   const [draft, setDraft] = useState(title);
   const inputRef = useRef(null);
   const skipBlurRef = useRef(false);
+  // Snapshot of the title at the moment edit mode entered. Used to
+  // distinguish "user cleared an existing task" (keep it) from "user
+  // never typed anything in a freshly-created empty task" (delete it).
+  const titleAtEditStartRef = useRef(title);
 
   useEffect(() => {
     if (!editing) return;
+    titleAtEditStartRef.current = title;
     setDraft(title);
     // Focus retries — the input may mount one frame after editingId
     // changes (Convex query reactivity), and there are paths where
@@ -5231,17 +5309,24 @@ function InlineTitle({
             e.preventDefault();
             const trimmed = draft.trim();
             if (!trimmed) {
-              // Empty Enter — just exit edit mode without saving.
-              // Avoids the auto-delete behavior where clearing a
-              // task title and pressing Enter would route through
-              // updateDaily's empty-string-deletes branch.
+              // Empty Enter — if the task was *also* empty at the
+              // moment edit mode opened, it's a freshly-created
+              // never-typed task: delete it to keep the list tidy.
+              // If the task started with a title (user cleared it),
+              // leave it alone and just exit edit mode.
+              if (!titleAtEditStartRef.current && onDelete) {
+                skipBlurRef.current = true;
+                onDelete();
+                return;
+              }
               onCancel();
               return;
             }
-            // Cmd/Ctrl+Enter saves the current row and creates a
-            // CHILD one level deeper (task → step, step → sub-step,
-            // etc.) instead of a sibling.
-            if (e.metaKey || e.ctrlKey) {
+            // Shift+Enter saves the current row and creates a CHILD
+            // one level deeper (task → step, step → sub-step, etc.)
+            // instead of a sibling. Cmd/Ctrl+Enter was previously
+            // used here but conflicts with browser shortcuts.
+            if (e.shiftKey) {
               if (onCommitChild) {
                 onSave(draft);
                 onCommitChild();
@@ -5265,10 +5350,16 @@ function InlineTitle({
             skipBlurRef.current = false;
             return;
           }
-          // Same protection on blur — leave the row alone if the
-          // user clears it and clicks away.
+          // Same logic on blur:
+          //   start empty + still empty  → delete (cleanup)
+          //   started non-empty + cleared → keep, exit edit mode
+          //   non-empty draft → save
           if (!draft.trim()) {
-            onCancel();
+            if (!titleAtEditStartRef.current && onDelete) {
+              onDelete();
+            } else {
+              onCancel();
+            }
             return;
           }
           onSave(draft);
@@ -5839,6 +5930,7 @@ function TaskRow({
                 }
               : undefined
           }
+          onDelete={onDelete}
           textClass={sz.text}
           depth={depth}
         />
@@ -5898,6 +5990,24 @@ function TaskRow({
           >
             {leafCount ? `${leafCount.done}/${leafCount.total}` : ""}
           </span>
+        )}
+        {item.deadline && (
+          <DeadlineChip
+            deadline={item.deadline}
+            onClear={
+              item.onSetDeadline
+                ? () => item.onSetDeadline(null)
+                : undefined
+            }
+            sz={sz}
+          />
+        )}
+        {item.onSetDeadline && (
+          <DeadlineButton
+            value={item.deadline}
+            onChange={item.onSetDeadline}
+            sz={sz}
+          />
         )}
         {item.onSetColor && (
           <div className="flex-none relative">

@@ -26,6 +26,8 @@ export default defineSchema({
     // Optional color tag — one of the keys in TASK_COLOR_PALETTE on the
     // client. Tints the row's left border.
     color: v.optional(v.string()),
+    deadline: v.optional(v.string()), // ISO YYYY-MM-DD
+    projectId: v.optional(v.id("projects")), // tag with a project for color/grouping
     createdAt: v.number(),
   })
     .index("by_user", ["userId"])
@@ -40,6 +42,8 @@ export default defineSchema({
     order: v.number(),
     habitId: v.optional(v.id("habits")),
     color: v.optional(v.string()),
+    deadline: v.optional(v.string()),
+    projectId: v.optional(v.id("projects")),
     createdAt: v.number(),
   })
     .index("by_user_day", ["userId", "day"])

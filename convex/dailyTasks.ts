@@ -113,6 +113,28 @@ export const updateTitle = mutation({
   },
 });
 
+// Collect all descendants of a row (children, grandchildren, etc.) by
+// walking parentId references. Used by toggleDone to cascade completion
+// down through every nested step.
+async function collectDescendants(
+  ctx: any,
+  rootId: any
+): Promise<Doc<"daily_tasks">[]> {
+  const out: Doc<"daily_tasks">[] = [];
+  const visit = async (parentId: any) => {
+    const kids = await ctx.db
+      .query("daily_tasks")
+      .withIndex("by_parent", (q: any) => q.eq("parentId", parentId))
+      .collect();
+    for (const k of kids as Doc<"daily_tasks">[]) {
+      out.push(k);
+      await visit(k._id);
+    }
+  };
+  await visit(rootId);
+  return out;
+}
+
 export const toggleDone = mutation({
   args: { id: v.id("daily_tasks"), date: v.string() },
   handler: async (ctx, { id, date }) => {
@@ -121,6 +143,17 @@ export const toggleDone = mutation({
     const newDone = !task.done;
     const rec = new UndoRecorder(ctx, userId);
     await rec.patch("daily_tasks", id, { done: newDone });
+    // Cascade DOWN: marking a parent done auto-completes every nested
+    // step. Unchecking the parent does NOT undo the children — the
+    // user can re-open specific ones if needed.
+    if (newDone) {
+      const descendants = await collectDescendants(ctx, id);
+      for (const d of descendants) {
+        if (!d.done) {
+          await rec.patch("daily_tasks", d._id, { done: true });
+        }
+      }
+    }
     if (task.habitId) {
       const existing = await ctx.db
         .query("habit_completions")
@@ -142,6 +175,35 @@ export const toggleDone = mutation({
       }
     }
     await rec.commit(newDone ? "Complete task" : "Uncomplete task");
+  },
+});
+
+export const setDeadline = mutation({
+  args: {
+    id: v.id("daily_tasks"),
+    deadline: v.optional(v.string()),
+  },
+  handler: async (ctx, { id, deadline }) => {
+    const userId = await requireUserId(ctx);
+    await getOwned(ctx, id, userId);
+    const rec = new UndoRecorder(ctx, userId);
+    await rec.patch("daily_tasks", id, { deadline });
+    await rec.commit(deadline ? "Set deadline" : "Clear deadline");
+  },
+});
+
+export const setProject = mutation({
+  args: {
+    id: v.id("daily_tasks"),
+    projectId: v.optional(v.id("projects")),
+  },
+  handler: async (ctx, { id, projectId }) => {
+    const userId = await requireUserId(ctx);
+    await getOwned(ctx, id, userId);
+    if (projectId) await getOwned(ctx, projectId, userId);
+    const rec = new UndoRecorder(ctx, userId);
+    await rec.patch("daily_tasks", id, { projectId });
+    await rec.commit(projectId ? "Tag project" : "Untag project");
   },
 });
 

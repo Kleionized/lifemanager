@@ -134,6 +134,25 @@ export const updateTitle = mutation({
   },
 });
 
+async function collectWeeklyDescendants(
+  ctx: any,
+  rootId: any
+): Promise<Doc<"weekly_tasks">[]> {
+  const out: Doc<"weekly_tasks">[] = [];
+  const visit = async (parentId: any) => {
+    const kids = await ctx.db
+      .query("weekly_tasks")
+      .withIndex("by_parent", (q: any) => q.eq("parentId", parentId))
+      .collect();
+    for (const k of kids as Doc<"weekly_tasks">[]) {
+      out.push(k);
+      await visit(k._id);
+    }
+  };
+  await visit(rootId);
+  return out;
+}
+
 export const toggleDone = mutation({
   args: { id: v.id("weekly_tasks"), date: v.string() },
   handler: async (ctx, { id, date }) => {
@@ -142,6 +161,14 @@ export const toggleDone = mutation({
     const newDone = !task.done;
     const rec = new UndoRecorder(ctx, userId);
     await rec.patch("weekly_tasks", id, { done: newDone });
+    if (newDone) {
+      const descendants = await collectWeeklyDescendants(ctx, id);
+      for (const d of descendants) {
+        if (!d.done) {
+          await rec.patch("weekly_tasks", d._id, { done: true });
+        }
+      }
+    }
     if (task.habitId) {
       const existing = await ctx.db
         .query("habit_completions")
@@ -163,6 +190,35 @@ export const toggleDone = mutation({
       }
     }
     await rec.commit(newDone ? "Complete task" : "Uncomplete task");
+  },
+});
+
+export const setDeadline = mutation({
+  args: {
+    id: v.id("weekly_tasks"),
+    deadline: v.optional(v.string()),
+  },
+  handler: async (ctx, { id, deadline }) => {
+    const userId = await requireUserId(ctx);
+    await getOwned(ctx, id, userId);
+    const rec = new UndoRecorder(ctx, userId);
+    await rec.patch("weekly_tasks", id, { deadline });
+    await rec.commit(deadline ? "Set deadline" : "Clear deadline");
+  },
+});
+
+export const setProject = mutation({
+  args: {
+    id: v.id("weekly_tasks"),
+    projectId: v.optional(v.id("projects")),
+  },
+  handler: async (ctx, { id, projectId }) => {
+    const userId = await requireUserId(ctx);
+    await getOwned(ctx, id, userId);
+    if (projectId) await getOwned(ctx, projectId, userId);
+    const rec = new UndoRecorder(ctx, userId);
+    await rec.patch("weekly_tasks", id, { projectId });
+    await rec.commit(projectId ? "Tag project" : "Untag project");
   },
 });
 
